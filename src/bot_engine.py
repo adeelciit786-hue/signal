@@ -12,11 +12,11 @@ import numpy as np
 from .data_fetcher import DataFetcher
 from .technical_indicators import TechnicalIndicators
 from .advanced_indicators import AdvancedIndicators
-from .market_regime import MarketRegime
+from .market_regime import MarketRegimeDetector
 from .enhanced_signal_engine import EnhancedSignalEngine
 from .enhanced_risk_manager import EnhancedRiskManager
 from .backtest_engine import BacktestEngine
-from .news_sentiment import NewsSentimentAnalyzer
+from .news_sentiment import NewsAndSentiment
 from .bot_config import BotConfig
 from .bot_interface import BotInterface
 
@@ -33,11 +33,11 @@ class SignalsBotEngine:
         self.data_fetcher = DataFetcher()
         self.tech_indicators = TechnicalIndicators()
         self.advanced_indicators = AdvancedIndicators()
-        self.market_regime = MarketRegime()
+        self.market_regime = MarketRegimeDetector()
         self.signal_engine = EnhancedSignalEngine()
         self.risk_manager = EnhancedRiskManager(self.config.get('account_balance'))
         self.backtest_engine = BacktestEngine()
-        self.news_analyzer = NewsSentimentAnalyzer()
+        self.news_analyzer = NewsAndSentiment()
         
         # Validation
         is_valid, errors = self.config.validate_config()
