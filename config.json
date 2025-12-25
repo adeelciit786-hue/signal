@@ -1,0 +1,57 @@
+{
+    "account_balance": 10000,
+    "risk_percent": 1.0,
+    "max_consecutive_losses": 3,
+    "max_daily_loss": 5.0,
+    "min_rr_ratio": 2.0,
+    "min_adx": 20.0,
+    "max_position_size_percent": 5.0,
+    "max_drawdown": 10.0,
+    "fast_ma_period": 10,
+    "slow_ma_period": 20,
+    "rsi_period": 14,
+    "rsi_overbought": 70,
+    "rsi_oversold": 30,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "bb_period": 20,
+    "bb_std_dev": 2.0,
+    "atr_period": 14,
+    "adx_period": 14,
+    "backtest_lookback_days": 30,
+    "min_backtest_trades": 5,
+    "min_win_rate": 0.45,
+    "min_profit_factor": 1.2,
+    "crypto_exchange": "binance",
+    "forex_source": "yfinance",
+    "stock_source": "yfinance",
+    "assets": [
+        {
+            "symbol": "BTC/USDT",
+            "type": "crypto",
+            "timeframe": "1h"
+        },
+        {
+            "symbol": "ETH/USDT",
+            "type": "crypto",
+            "timeframe": "1h"
+        },
+        {
+            "symbol": "AAPL",
+            "type": "stock",
+            "timeframe": "1h"
+        }
+    ],
+    "confidence_threshold": 60.0,
+    "signal_quality_weights": {
+        "A+": 1.0,
+        "B": 0.75,
+        "C": 0.5,
+        "NEUTRAL": 0.0
+    },
+    "send_notifications": false,
+    "notification_channels": [
+        "console"
+    ]
+}
