@@ -131,6 +131,7 @@ class SignalsBotEngine:
             logger.debug("Step 6: Running risk validation...")
             current_price = df['close'].iloc[-1]
             setup = signal_analysis.get('setup', {})
+            atr = df.iloc[-1].get('ATR', current_price * 0.02) if 'ATR' in df.columns else current_price * 0.02
             
             # Create trade decision for risk validation
             trade_decision = {
@@ -138,10 +139,12 @@ class SignalsBotEngine:
                 'entry_price': setup.get('entry', current_price),
                 'stop_loss': setup.get('stop_loss', current_price * 0.98),
                 'take_profit': setup.get('take_profit', current_price * 1.05),
-                'confidence': signal_analysis.get('confidence', 0)
+                'confidence': signal_analysis.get('confidence', 0),
+                'atr': atr
             }
             
             risk_validation = self.risk_manager.enforce_risk_rules(trade_decision, df)
+            signal_analysis['risk_validation'] = risk_validation
             
             # Final signal - only BUY/SELL if risk rules pass
             if not risk_validation.get('allowed', False):

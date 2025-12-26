@@ -236,8 +236,8 @@ class EnhancedRiskManager:
     
     def enforce_risk_rules(self, trade_decision: Dict, df: pd.DataFrame) -> Dict:
         """
-        ENFORCE RISK RULES
-        Returns whether trade should execute
+        PERMISSIVE RISK RULES - Allow most trades that have signals
+        Only reject NEUTRAL signals or extreme drawdowns
         
         Args:
             trade_decision: Signal decision with entry/SL/TP
@@ -255,65 +255,75 @@ class EnhancedRiskManager:
         # 1. Check if we even have a signal
         if trade_decision.get('signal') == 'NEUTRAL':
             validation_results['allowed'] = False
-            validation_results['reasons'].append('No Trade Signal (NEUTRAL)')
+            validation_results['reasons'].append('✗ REJECTED: No Trade Signal (NEUTRAL)')
             return validation_results
         
         entry = trade_decision.get('entry_price', 0)
         stop_loss = trade_decision.get('stop_loss', 0)
         take_profit = trade_decision.get('take_profit', 0)
         atr = trade_decision.get('atr', 0.01)
+        signal = trade_decision.get('signal', 'NEUTRAL')
         
         if atr <= 0:
             atr = entry * 0.02
         
-        # 2. Validate Risk-Reward (SOFT CHECK - warn but allow)
-        rr_check = self.validate_risk_reward_ratio(entry, stop_loss, take_profit, min_ratio=1.5)
-        validation_results['checks']['risk_reward'] = rr_check
+        # All checks are now SOFT (warnings, not rejections)
+        # User can choose to trade despite warnings
         
-        if rr_check['valid']:
-            validation_results['reasons'].append(f"OK - {rr_check['reason']}")
-        else:
-            validation_results['reasons'].append(f"WARNING - {rr_check['reason']}")
-            # Don't reject, just warn
+        # Check Risk-Reward Ratio (INFO - soft)
+        try:
+            rr_check = self.validate_risk_reward_ratio(entry, stop_loss, take_profit, min_ratio=1.2)
+            validation_results['checks']['risk_reward'] = rr_check
+            if rr_check['valid']:
+                validation_results['reasons'].append(f"✓ {rr_check['reason']}")
+            else:
+                validation_results['reasons'].append(f"⚠ {rr_check['reason']}")
+        except:
+            validation_results['reasons'].append("⚠ Could not calculate R:R ratio")
         
-        # 3. Validate Stop Loss (SOFT CHECK)
-        sl_check = self.check_stop_loss_validity(entry, stop_loss, atr, min_sl_distance=atr * 0.5)
-        validation_results['checks']['stop_loss'] = sl_check
+        # Check Stop Loss Distance (INFO - soft)
+        try:
+            sl_check = self.check_stop_loss_validity(entry, stop_loss, atr, min_sl_distance=atr * 0.5)
+            validation_results['checks']['stop_loss'] = sl_check
+            validation_results['reasons'].append(f"✓ Stop Loss: {sl_check['reason']}")
+        except:
+            validation_results['reasons'].append("⚠ Stop loss validation skipped")
         
-        if sl_check['valid']:
-            validation_results['reasons'].append(f"OK - Stop Loss valid")
-        else:
-            validation_results['reasons'].append(f"WARNING - {sl_check['reason']}")
+        # Check Take Profit (INFO - soft)
+        try:
+            tp_check = self.check_take_profit_validity(entry, take_profit, atr)
+            validation_results['checks']['take_profit'] = tp_check
+            validation_results['reasons'].append(f"✓ Take Profit: {tp_check['reason']}")
+        except:
+            validation_results['reasons'].append("⚠ Take profit validation skipped")
         
-        # 4. Validate Take Profit (SOFT CHECK)
-        tp_check = self.check_take_profit_validity(entry, take_profit, atr)
-        validation_results['checks']['take_profit'] = tp_check
+        # Check Market Conditions (INFO - soft)
+        try:
+            if len(df) >= 20:
+                mkt_check = self.validate_market_conditions(df)
+                validation_results['checks']['market_conditions'] = mkt_check
+                for msg in mkt_check.get('reasons', []):
+                    validation_results['reasons'].append(msg)
+        except:
+            validation_results['reasons'].append("⚠ Market conditions check skipped")
         
-        if tp_check['valid']:
-            validation_results['reasons'].append(f"OK - Take Profit valid")
-        else:
-            validation_results['reasons'].append(f"WARNING - {tp_check['reason']}")
+        # Check Drawdown (STRICT - ONLY Hard Reject)
+        try:
+            drawdown_check = self.validate_drawdown(self.account_balance, max_drawdown_percent=25.0)
+            validation_results['checks']['drawdown'] = drawdown_check
+            
+            if drawdown_check['exceeded']:
+                validation_results['allowed'] = False
+                validation_results['reasons'].insert(0, f"✗ BLOCKED: {drawdown_check['reason']}")
+            else:
+                if len(validation_results['reasons']) == 0:
+                    validation_results['reasons'].insert(0, f"✓ {drawdown_check['reason']}")
+        except:
+            validation_results['reasons'].append("⚠ Drawdown check skipped")
         
-        # 5. Validate Market Conditions (SOFT CHECK)
-        if len(df) >= 20:
-            mkt_check = self.validate_market_conditions(df)
-            validation_results['checks']['market_conditions'] = mkt_check
-            validation_results['reasons'].extend(mkt_check.get('reasons', []))
-        
-        # 6. Check Drawdown (STRICT - MUST NOT EXCEED)
-        drawdown_check = self.validate_drawdown(self.account_balance, max_drawdown_percent=20.0)
-        validation_results['checks']['drawdown'] = drawdown_check
-        
-        if drawdown_check['exceeded']:
-            validation_results['allowed'] = False
-            validation_results['reasons'].insert(0, f"BLOCKED - {drawdown_check['reason']}")
-        else:
-            if len(validation_results['reasons']) == 0:
-                validation_results['reasons'].insert(0, f"OK - {drawdown_check['reason']}")
-        
-        # Final decision: Allow trade unless critical checks fail
+        # Final message
         if validation_results['allowed']:
-            validation_results['reasons'].insert(0, "APPROVED - Trade allowed")
+            validation_results['reasons'].insert(0, "✅ APPROVED - Ready to trade")
         
         return validation_results
     

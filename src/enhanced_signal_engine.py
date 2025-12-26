@@ -290,6 +290,7 @@ class EnhancedSignalEngine:
     def evaluate_volatility_condition(df: pd.DataFrame) -> Dict:
         """
         Volatility suitability for trading
+        More permissive - low volatility is OK for range-bound trades
         """
         latest = df.iloc[-1]
         
@@ -305,19 +306,22 @@ class EnhancedSignalEngine:
         acceptable = True
         reason = "Volatility Acceptable"
         
-        # Check for extreme volatility
-        if natr > 8:  # Very high volatility
+        # Check for EXTREME volatility only (reject only if too risky)
+        if natr > 10:  # Extremely high volatility - risky
             acceptable = False
-            reason = "HIGH VOLATILITY - Too Risky"
-        elif natr > 5:  # Moderate-high
+            reason = "EXTREME VOLATILITY - Too Risky"
+        elif natr > 7:  # Very high - warn but allow
             acceptable = True
-            reason = "Elevated Volatility - Use Tighter Stops"
-        elif natr < 1:  # Very low volatility
-            acceptable = False
-            reason = "TOO LOW VOLATILITY - Breakout Setup"
+            reason = "HIGH VOLATILITY - Use Wider Stops"
+        elif natr > 4:  # Moderate-high
+            acceptable = True
+            reason = "ELEVATED VOLATILITY"
+        elif natr < 0.5:  # Very low - allow for range-bound trades
+            acceptable = True
+            reason = "LOW VOLATILITY - Range-Bound Setup"
         else:
             acceptable = True
-            reason = "Volatility Normal"
+            reason = "Volatility Acceptable"
         
         return {
             'acceptable': acceptable,
@@ -361,96 +365,142 @@ class EnhancedSignalEngine:
             'volatility': volatility_eval
         }
         
-        # ========== STRICT RULE LOGIC (SIMPLIFIED) ==========
+    @staticmethod
+    def apply_strict_signal_rules(df: pd.DataFrame) -> Dict:
+        """
+        CONSERVATIVE MULTI-CONFIRMATION SIGNAL RULES
+        Only generates BUY/SELL when multiple conditions align
+        Prioritizes accuracy over frequency
+        """
         
-        if trend_eval['trend'] == "BULLISH":
-            # Trend is bullish, check other conditions
+        logger.info("Applying Conservative Multi-Confirmation Rules...")
+        
+        if len(df) < 50:
+            return {
+                'signal': 'NEUTRAL',
+                'confidence': 0,
+                'quality': 'INSUFFICIENT_DATA',
+                'setup': {'entry': 0, 'stop_loss': 0, 'take_profit': 0, 'rr_ratio': 0},
+                'reasons': {'bullish_reasons': ['Insufficient historical data (need 50+ candles)']}
+            }
+        
+        # Get all confirmations
+        trend_eval = EnhancedSignalEngine.evaluate_trend_strength(df)
+        momentum_eval = EnhancedSignalEngine.evaluate_momentum_confirmation(df)
+        volume_eval = EnhancedSignalEngine.evaluate_volume_confirmation(df)
+        volatility_eval = EnhancedSignalEngine.evaluate_volatility_condition(df)
+        
+        latest = df.iloc[-1]
+        current_price = latest['close']
+        atr = latest.get('ATR', current_price * 0.02)
+        if pd.isna(atr):
+            atr = current_price * 0.02
+        
+        signal = "NEUTRAL"
+        confidence = 0
+        quality = SignalQuality.NEUTRAL.value
+        
+        all_checks = {
+            'trend': trend_eval,
+            'momentum': momentum_eval,
+            'volume': volume_eval,
+            'volatility': volatility_eval
+        }
+        
+        # ========== ENHANCED CONSERVATIVE RULES ==========
+        # MORE STRINGENT - Need STRONG alignment for BUY/SELL
+        
+        trend = trend_eval['trend']
+        trend_conf = trend_eval['confidence']
+        momentum_conf = momentum_eval['confidence']
+        momentum_ok = momentum_eval['confirmed']
+        volume_ok = volume_eval['confirmed']
+        
+        # BUY SIGNAL: Trend BULLISH + Momentum + Volume (Volatility is secondary)
+        if (trend == "BULLISH" and 
+            trend_conf > 55 and  # Strong bullish trend
+            momentum_ok and 
+            momentum_conf > 50 and  # Confirmed momentum
+            volume_ok):
             
-            if momentum_eval['confirmed']:
-                # Trend + Momentum = BUY (volume and volatility are secondary)
-                signal = "BUY"
-                confidence = (trend_eval['confidence'] + momentum_eval['confidence']) / 2
-                
-                # Grade the signal
-                if confidence > 75:
-                    quality = SignalQuality.STRONG.value
-                elif confidence > 60:
-                    quality = SignalQuality.GOOD.value
-                else:
-                    quality = SignalQuality.WEAK.value
-            else:
-                # Trend without momentum confirmation
-                signal = "NEUTRAL"
-                confidence = 55
-                quality = SignalQuality.NEUTRAL.value
-        
-        elif trend_eval['trend'] == "BEARISH":
-            # Trend is bearish, check momentum
+            signal = "BUY"
+            confidence = (trend_conf + momentum_conf) / 2
             
-            if momentum_eval['confirmed']:
-                # Trend + Momentum = SELL
-                signal = "SELL"
-                confidence = (trend_eval['confidence'] + momentum_eval['confidence']) / 2
-                
-                if confidence > 75:
-                    quality = SignalQuality.STRONG.value
-                elif confidence > 60:
-                    quality = SignalQuality.GOOD.value
-                else:
-                    quality = SignalQuality.WEAK.value
+            if confidence > 80:
+                quality = SignalQuality.STRONG.value
+            elif confidence > 65:
+                quality = SignalQuality.GOOD.value
             else:
-                signal = "NEUTRAL"
-                confidence = 55
-                quality = SignalQuality.NEUTRAL.value
+                quality = SignalQuality.WEAK.value
         
+        # SELL SIGNAL: Trend BEARISH + Momentum + Volume (Volatility is secondary)
+        elif (trend == "BEARISH" and 
+              trend_conf > 55 and
+              momentum_ok and 
+              momentum_conf > 50 and
+              volume_ok):
+            
+            signal = "SELL"
+            confidence = (trend_conf + momentum_conf) / 2
+            
+            if confidence > 80:
+                quality = SignalQuality.STRONG.value
+            elif confidence > 65:
+                quality = SignalQuality.GOOD.value
+            else:
+                quality = SignalQuality.WEAK.value
+        
+        # No signal if conditions don't align
         else:
-            # No clear trend
             signal = "NEUTRAL"
             confidence = 50
             quality = SignalQuality.NEUTRAL.value
         
         # ========== CALCULATE SETUP (Entry, SL, TP) ==========
-        latest = df.iloc[-1]
-        current_price = latest['close']
-        atr = latest.get('ATR', current_price * 0.02)
-        
         setup = {
             'entry': current_price,
             'stop_loss': 0,
             'take_profit': 0,
             'rr_ratio': 0,
             'position_size': 0,
-            'atr': atr
+            'atr': atr,
+            'signal_bars': len(df)
         }
         
         if signal == 'BUY':
-            setup['stop_loss'] = current_price - (atr * 2.0)  # 2x ATR below entry
-            setup['take_profit'] = current_price + (atr * 4.0)  # 4x ATR above entry
+            # Conservative: 2.5x ATR for stop (wider)
+            setup['stop_loss'] = current_price - (atr * 2.5)
+            # Conservative: 5x ATR for TP (better rewards)
+            setup['take_profit'] = current_price + (atr * 5.0)
             setup['rr_ratio'] = (setup['take_profit'] - setup['entry']) / (setup['entry'] - setup['stop_loss'])
             
         elif signal == 'SELL':
-            setup['stop_loss'] = current_price + (atr * 2.0)  # 2x ATR above entry
-            setup['take_profit'] = current_price - (atr * 4.0)  # 4x ATR below entry
+            # Conservative: 2.5x ATR for stop (wider)
+            setup['stop_loss'] = current_price + (atr * 2.5)
+            # Conservative: 5x ATR for TP (better rewards)
+            setup['take_profit'] = current_price - (atr * 5.0)
             setup['rr_ratio'] = (setup['entry'] - setup['take_profit']) / (setup['stop_loss'] - setup['entry'])
         
         return {
             'signal': signal,
-            'confidence': confidence,
+            'confidence': min(100, max(0, confidence)),
             'quality': quality,
             'setup': setup,
             'confirmations': {
                 'trend': trend_eval['trend'],
                 'trend_strength': f"{trend_eval['confidence']:.1f}%",
+                'trend_bullish_signals': trend_eval.get('bullish_signals', 0),
                 'momentum_confirmed': momentum_eval['confirmed'],
                 'momentum_strength': f"{momentum_eval['confidence']:.1f}%",
                 'volume_confirmed': volume_eval['confirmed'],
                 'volatility_acceptable': volatility_eval['acceptable'],
-                'volatility_reason': volatility_eval['reason']
+                'volatility_reason': volatility_eval['reason'],
+                'atr_value': f"{atr:.2f}"
             },
             'detailed_analysis': all_checks,
             'reasons': {
-                'bullish_reasons': trend_eval.get('reasons', []),
-                'momentum_indicators': momentum_eval.get('indicators', []),
+                'bullish_reasons': trend_eval.get('reasons', [])[:3],
+                'momentum_indicators': momentum_eval.get('indicators', [])[:3],
                 'volume_status': volume_eval.get('reason', ''),
                 'volatility_status': volatility_eval.get('reason', '')
             }
