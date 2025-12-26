@@ -1,7 +1,7 @@
 """
-ENHANCED SIGNALS BOT - Professional Trading Signal Analyzer
-Displays charts with BUY/SELL markers, detailed technical analysis, and risk assessment
-Works in all environments with full indicator visualization
+PROFESSIONAL SIGNALS BOT - Trading Signal Generator
+Real-time analysis with BUY/SELL signals, charts, and technical analysis
+Production-ready with comprehensive data fetching and signal generation
 """
 
 import streamlit as st
@@ -9,91 +9,124 @@ import sys
 import os
 import logging
 from pathlib import Path
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
 
-# Configure Streamlit
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Import bot modules
+try:
+    from src.data_fetcher import DataFetcher
+    from src.technical_indicators import TechnicalIndicators
+    from src.strategy_logic import StrategyLogic
+    from src.signal_generator import SignalGenerator
+    logger.info("Successfully imported bot modules")
+except Exception as e:
+    logger.error(f"Failed to import bot modules: {e}")
+    st.error(f"❌ Failed to load bot modules: {e}")
+    st.stop()
+
+# ==================== PAGE CONFIGURATION ====================
 st.set_page_config(
-    page_title="Professional Trading Signals",
+    page_title="Professional Trading Signals Bot",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
     <style>
-        .signal-buy {
-            background-color: rgba(0, 200, 0, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            border-left: 5px solid #00CC00;
-        }
-        .signal-sell {
-            background-color: rgba(255, 50, 50, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            border-left: 5px solid #FF3333;
-        }
-        .signal-neutral {
-            background-color: rgba(255, 184, 28, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            border-left: 5px solid #FFB81C;
-        }
-        .metric-card {
-            background-color: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-        }
+    .signal-buy {
+        background: linear-gradient(135deg, rgba(0, 200, 0, 0.15), rgba(0, 150, 0, 0.05));
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #00CC00;
+        margin: 10px 0;
+    }
+    .signal-sell {
+        background: linear-gradient(135deg, rgba(255, 50, 50, 0.15), rgba(200, 0, 0, 0.05));
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #FF3333;
+        margin: 10px 0;
+    }
+    .signal-neutral {
+        background: linear-gradient(135deg, rgba(255, 184, 28, 0.15), rgba(255, 150, 0, 0.05));
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #FFB81C;
+        margin: 10px 0;
+    }
+    .metric-card {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# Title and description
-st.title("📈 Professional Trading Signal Analyzer")
-st.markdown("*Accurate BUY/SELL signals with technical analysis, charts, and risk management*")
+# ==================== MAIN TITLE ====================
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.title("📈 Professional Trading Signal Analyzer")
+    st.markdown("*Multi-timeframe technical analysis with BUY/SELL signals | Real-time data from Yahoo Finance & Binance*")
 
-# Initialize session state
-if 'analysis_result' not in st.session_state:
-    st.session_state.analysis_result = None
+with col2:
+    if st.button("🔄 Refresh Data", help="Force refresh market data"):
+        st.session_state.last_refresh = pd.Timestamp.now()
+        st.rerun()
 
-
-# ========== SIDEBAR CONFIGURATION ==========
+# ==================== SIDEBAR CONFIGURATION ====================
 st.sidebar.markdown("## ⚙️ Configuration")
 
-asset_type = st.sidebar.selectbox(
+# Asset type selection
+asset_type_map = {"Crypto": "crypto", "Stock": "stock", "Forex": "forex"}
+asset_display = st.sidebar.radio(
     "Asset Type",
     ["Crypto", "Stock", "Forex"],
-    help="Select the type of asset to analyze"
+    horizontal=True,
+    help="Select the asset class to analyze"
 )
+asset_type = asset_type_map[asset_display]
 
-# Symbol selection based on asset type
-symbols = {
-    "Crypto": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT", "DOGE/USDT"],
-    "Stock": ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "META"],
-    "Forex": ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD"]
+# Symbol selection
+symbols_dict = {
+    "Crypto": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT", "DOGE/USDT", "BNB/USDT"],
+    "Stock": ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "META", "NVDA"],
+    "Forex": ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD", "CAD/USD"]
 }
 
 symbol = st.sidebar.selectbox(
-    "Symbol",
-    symbols[asset_type],
-    help="Select the trading symbol"
+    "Trading Pair",
+    symbols_dict[asset_display],
+    help="Select the trading symbol to analyze"
 )
 
+# Timeframe selection
 timeframe = st.sidebar.selectbox(
     "Timeframe",
-    ["15m", "30m", "1h", "4h", "1d", "1w"],
-    help="Candlestick timeframe for analysis"
+    ["15m", "30m", "1h", "4h", "1d"],
+    index=2,  # Default to 1h
+    help="Candlestick timeframe"
 )
 
 # Risk settings
 st.sidebar.markdown("---")
 st.sidebar.markdown("## 🛡️ Risk Settings")
 
-max_risk_percent = st.sidebar.slider(
+max_risk = st.sidebar.slider(
     "Max Risk per Trade (%)",
     min_value=0.5,
     max_value=5.0,
@@ -104,345 +137,255 @@ max_risk_percent = st.sidebar.slider(
 
 min_confidence = st.sidebar.slider(
     "Minimum Signal Confidence (%)",
-    min_value=50,
-    max_value=90,
-    value=65,
-    help="Only show signals above this confidence level"
+    min_value=0,
+    max_value=100,
+    value=55,
+    step=5,
+    help="Minimum confidence level to generate signals"
 )
 
-# Additional options
-st.sidebar.markdown("---")
-show_indicators = st.sidebar.checkbox("Show Detailed Indicators", value=True)
-show_reasoning = st.sidebar.checkbox("Show Signal Reasoning", value=True)
-
-
-# ========== LOAD BOT ENGINE ==========
-try:
-    sys.path.insert(0, str(Path(__file__).parent / 'src'))
-    from bot_engine import BotOrchestrator
-    from chart_visualizer import ChartVisualizer, display_trading_analysis
-    
-    if not os.path.exists('config.json'):
-        st.error("❌ config.json not found! Please ensure the configuration file exists.")
-        st.stop()
-    
-    bot = BotOrchestrator('config.json')
-    logger.info("✓ Bot engine loaded successfully")
-    
-except Exception as e:
-    st.error(f"❌ Failed to load bot engine: {str(e)}")
-    logger.error(f"Bot loading error: {e}")
-    st.stop()
-
-
-# ========== MAIN ANALYSIS SECTION ==========
+# ==================== MAIN ANALYSIS ====================
 st.markdown("---")
 
-# Generate signal button
-col1, col2, col3 = st.columns([2, 1, 1])
+# Create columns for data fetching status
+status_col1, status_col2, status_col3 = st.columns(3)
 
-with col1:
-    analyze_button = st.button(
-        "🔍 Analyze and Generate Signal",
-        type="primary",
-        use_container_width=True,
-        help="Click to analyze the selected symbol and generate a trading signal"
+with st.spinner("🔄 Fetching market data..."):
+    try:
+        # Fetch data
+        fetcher = DataFetcher()
+        df = fetcher.fetch_data(symbol, asset_type, timeframe, lookback_days=90)
+        
+        if df.empty or len(df) < 50:
+            st.error(f"❌ Insufficient data for {symbol}. Got {len(df)} candles, need at least 50.")
+            st.info("**Troubleshooting:**\n- Check symbol spelling\n- Try different timeframe\n- Ensure market is open")
+            st.stop()
+        
+        # Calculate all technical indicators
+        TechnicalIndicators.calculate_all_indicators(df)
+        
+        status_col1.success(f"✅ Data: {len(df)} candles")
+        status_col2.info(f"⏰ Latest: {df.index[-1].strftime('%Y-%m-%d %H:%M')}")
+        
+        current_price = df['close'].iloc[-1]
+        status_col3.metric("Current Price", f"${current_price:.4f}")
+        
+    except Exception as e:
+        st.error(f"❌ Error fetching data: {str(e)}")
+        logger.error(f"Data fetch error for {symbol}: {str(e)}")
+        st.stop()
+
+# ==================== SIGNAL GENERATION ====================
+st.markdown("---")
+st.subheader("📊 Signal Analysis")
+
+try:
+    # Evaluate trend
+    trend_signal, trend_conf = StrategyLogic.evaluate_trend(df)
+    
+    # Evaluate momentum
+    momentum_signal, momentum_conf = StrategyLogic.evaluate_momentum(df)
+    
+    # Evaluate volume
+    volume_signal, volume_conf = StrategyLogic.evaluate_volume(df)
+    
+    # Evaluate volatility
+    volatility_signal, volatility_conf = StrategyLogic.evaluate_volatility_suitability(df, "normal")
+    
+    # Generate composite signal
+    composite = StrategyLogic.generate_composite_signal(
+        (trend_signal, trend_conf),
+        (momentum_signal, momentum_conf),
+        (volume_signal, volume_conf),
+        (volatility_signal, volatility_conf),
+        "normal"
     )
-
-with col2:
-    refresh_button = st.button("🔄 Refresh", use_container_width=True)
-
-with col3:
-    clear_button = st.button("🗑️ Clear", use_container_width=True)
-
-if clear_button:
-    st.session_state.analysis_result = None
-    st.rerun()
-
-
-# ========== SIGNAL ANALYSIS ==========
-if analyze_button or st.session_state.analysis_result:
     
-    if analyze_button:
-        # Show spinner while analyzing
-        with st.spinner(f"🔄 Analyzing {symbol} on {timeframe} timeframe..."):
-            try:
-                # Perform analysis
-                analysis = bot.engine.analyze_single_asset(
-                    symbol=symbol,
-                    asset_type=asset_type.lower(),
-                    timeframe=timeframe,
-                    backtest=False
-                )
-                
-                # Store in session state
-                st.session_state.analysis_result = {
-                    'analysis': analysis,
-                    'symbol': symbol,
-                    'timeframe': timeframe,
-                    'asset_type': asset_type
-                }
-                
-            except Exception as e:
-                st.error(f"❌ Error during analysis: {str(e)}")
-                logger.error(f"Analysis error: {e}")
-                st.stop()
+    final_signal = composite['signal']
+    final_confidence = composite['confidence']
     
-    # Display stored result
-    if st.session_state.analysis_result:
-        result = st.session_state.analysis_result
-        analysis = result['analysis']
-        symbol = result['symbol']
-        timeframe = result['timeframe']
-        
-        signal = analysis.get('signal', 'NEUTRAL')
-        confidence = analysis.get('confidence', 0)
-        setup = analysis.get('setup', {})
-        confirmations = analysis.get('confirmations', {})
-        risk_validation = analysis.get('risk_validation', {})
-        quality = analysis.get('quality', 'NEUTRAL')
-        
-        # ========== SIGNAL HEADER ==========
-        st.markdown("---")
-        
-        if signal == 'BUY' and confidence >= min_confidence:
-            st.markdown("""
-                <div class="signal-buy">
-                    <h2 style="color: #00CC00; margin: 0;">🟢 BUY SIGNAL</h2>
-                    <h3 style="color: #00CC00; margin: 0;">Confidence: {:.1f}%</h3>
-                    <p style="margin: 0;">Quality: <strong>{}</strong></p>
-                </div>
-            """.format(confidence, quality), unsafe_allow_html=True)
-            
-        elif signal == 'SELL' and confidence >= min_confidence:
-            st.markdown("""
-                <div class="signal-sell">
-                    <h2 style="color: #FF3333; margin: 0;">🔴 SELL SIGNAL</h2>
-                    <h3 style="color: #FF3333; margin: 0;">Confidence: {:.1f}%</h3>
-                    <p style="margin: 0;">Quality: <strong>{}</strong></p>
-                </div>
-            """.format(confidence, quality), unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <div class="signal-neutral">
-                    <h2 style="color: #FFB81C; margin: 0;">🟡 NEUTRAL / INSUFFICIENT SIGNAL</h2>
-                    <h3 style="color: #FFB81C; margin: 0;">Confidence: {:.1f}%</h3>
-                    <p style="margin: 0;">⚠️ Signal below minimum confidence threshold or data insufficient</p>
-                </div>
-            """.format(confidence), unsafe_allow_html=True)
-        
-        st.markdown("---")
-        
-        # ========== CHART DISPLAY ==========
-        if 'dataframe' in analysis and analysis['dataframe'] is not None:
-            try:
-                st.subheader("📊 Price Chart with Signal Markers")
-                
-                fig_chart = ChartVisualizer.create_signal_chart(
-                    analysis['dataframe'],
-                    signal,
-                    confidence,
-                    symbol,
-                    timeframe,
-                    setup
-                )
-                st.plotly_chart(fig_chart, use_container_width=True)
-                
-            except Exception as e:
-                st.warning(f"Could not display main chart: {e}")
-        
-        # ========== TRADE SETUP ==========
-        st.subheader("💰 Trade Setup Details")
-        
-        setup_col1, setup_col2, setup_col3, setup_col4 = st.columns(4)
-        
-        with setup_col1:
-            entry = setup.get('entry', 0)
-            st.metric(
-                "Entry Price",
-                f"${entry:.4f}" if entry > 0 else "N/A",
-                help="Entry point for the trade"
-            )
-        
-        with setup_col2:
-            sl = setup.get('stop_loss', 0)
-            st.metric(
-                "Stop Loss",
-                f"${sl:.4f}" if sl > 0 else "N/A",
-                help="Risk management - price at which to exit with loss"
-            )
-        
-        with setup_col3:
-            tp = setup.get('take_profit', 0)
-            st.metric(
-                "Take Profit",
-                f"${tp:.4f}" if tp > 0 else "N/A",
-                help="Target profit - price at which to take profit"
-            )
-        
-        with setup_col4:
-            rr = setup.get('rr_ratio', 0)
-            st.metric(
-                "Risk:Reward Ratio",
-                f"{rr:.2f}:1" if rr > 0 else "N/A",
-                help="Profit potential vs risk (higher is better, min 1.5:1 recommended)"
-            )
-        
-        st.markdown("---")
-        
-        # ========== TECHNICAL CONFIRMATIONS ==========
-        st.subheader("✓ Technical Confirmations")
-        
-        conf_col1, conf_col2, conf_col3 = st.columns(3)
-        
-        with conf_col1:
-            trend = confirmations.get('trend', 'N/A')
-            trend_strength = confirmations.get('trend_strength', '0%')
-            
-            if 'BULLISH' in str(trend):
-                st.success(f"**Trend:** {trend}")
-            elif 'BEARISH' in str(trend):
-                st.error(f"**Trend:** {trend}")
-            else:
-                st.info(f"**Trend:** {trend}")
-            
-            st.caption(f"Strength: {trend_strength}")
-        
-        with conf_col2:
-            momentum_ok = confirmations.get('momentum_confirmed', False)
-            momentum_strength = confirmations.get('momentum_strength', '0%')
-            
-            if momentum_ok:
-                st.success("**Momentum:** Confirmed ✓")
-            else:
-                st.warning("**Momentum:** Not Confirmed ✗")
-            
-            st.caption(f"Strength: {momentum_strength}")
-        
-        with conf_col3:
-            volume_ok = confirmations.get('volume_confirmed', False)
-            volatility_ok = confirmations.get('volatility_acceptable', False)
-            
-            if volume_ok:
-                st.success("**Volume:** Confirmed ✓")
-            else:
-                st.info("**Volume:** Low (⚠️ but OK)")
-            
-            if volatility_ok:
-                st.caption("Volatility: Acceptable ✓")
-            else:
-                st.caption("Volatility: High ⚠️")
-        
-        # Add explanation of signal logic
-        st.markdown("---")
-        with st.expander("📖 How Signals Are Generated (Click to expand)", expanded=False):
-            st.markdown("""
-            ### Signal Generation Logic
-            
-            **PRIMARY REQUIREMENTS (MUST have both):**
-            1. ✓ **Trend**: BULLISH (>45% confidence) OR BEARISH (>45% confidence)
-            2. ✓ **Momentum**: Confirmed by indicators (>45% confidence)
-            
-            **SECONDARY FACTORS (Enhance signal quality):**
-            - 📊 **Volume**: Confirmed = bonus +5% confidence
-            - 🌊 **Volatility**: Acceptable range = no penalty
-            
-            **SIGNAL TYPES:**
-            - 🟢 **BUY**: Bullish trend + Momentum confirmed
-            - 🔴 **SELL**: Bearish trend + Momentum confirmed  
-            - 🟡 **NEUTRAL**: No clear trend OR momentum not confirmed
-            
-            **Why you might see signals with low volume?**
-            - In range-bound markets, volume is naturally lower
-            - Momentum indicators still confirm the trend
-            - Modern algorithms trade off momentum alone
-            - Low volume doesn't invalidate the signal
-            
-            **Confidence Scoring:**
-            - Base: (Trend% + Momentum%) / 2
-            - Bonus: +5% if volume also confirms
-            - Maximum: 95% (leave 5% margin for uncertainty)
-            """)
-        
-        st.markdown("---")
-        
-        # ========== DETAILED INDICATORS (Optional) ==========
-        if show_indicators:
-            st.subheader("📈 Detailed Technical Indicators")
-            
-            try:
-                fig_indicators = ChartVisualizer.create_indicator_panel(
-                    analysis['dataframe'],
-                    symbol
-                )
-                st.plotly_chart(fig_indicators, use_container_width=True)
-            except Exception as e:
-                st.warning(f"Could not display indicator panel: {e}")
-        
-        # ========== SIGNAL REASONING (Optional) ==========
-        if show_reasoning:
-            st.subheader("💭 Signal Analysis Reasoning")
-            
-            reasons = analysis.get('reasons', {})
-            
-            with st.expander("Why this signal?", expanded=True):
-                bullish = reasons.get('bullish_reasons', [])
-                momentum = reasons.get('momentum_indicators', [])
-                volume_status = reasons.get('volume_status', 'No data')
-                volatility_status = reasons.get('volatility_status', 'No data')
-                
-                if bullish:
-                    st.markdown("**Bullish Signals:**")
-                    for reason in bullish[:5]:
-                        st.markdown(f"• {reason}")
-                
-                if momentum:
-                    st.markdown("**Momentum Confirmations:**")
-                    for ind in momentum[:5]:
-                        st.markdown(f"• {ind}")
-                
-                if volume_status != 'No data':
-                    st.markdown(f"**Volume:** {volume_status}")
-                
-                if volatility_status != 'No data':
-                    st.markdown(f"**Volatility:** {volatility_status}")
-        
-        # ========== RISK ASSESSMENT ==========
-        st.subheader("⚠️ Risk Assessment")
-        
-        is_allowed = risk_validation.get('allowed', False)
-        
-        if is_allowed and signal != 'NEUTRAL':
-            st.success("✓ RISK APPROVED - Trade meets all risk criteria")
-        elif signal == 'NEUTRAL':
-            st.warning("⚠️ No signal generated - wait for clearer market conditions")
-        else:
-            st.error("✗ RISK REJECTED - Trade does not meet risk criteria")
-        
-        # Risk checks
-        with st.expander("Risk Check Details"):
-            checks = risk_validation.get('checks', {})
-            
-            for check_name, check_result in checks.items():
-                if isinstance(check_result, dict):
-                    is_valid = check_result.get('valid', False)
-                    reason = check_result.get('reason', 'No details')
-                    
-                    if is_valid:
-                        st.info(f"✓ {check_name}: {reason}")
-                    else:
-                        st.warning(f"⚠️ {check_name}: {reason}")
-        
-        st.markdown("---")
-        
-        # ========== DISCLAIMER ==========
-        st.info(
-            "⚠️ **DISCLAIMER**: This is for educational purposes only. "
-            "Always perform your own due diligence and risk assessment before trading. "
-            "Past performance does not guarantee future results."
-        )
+    # Filter by confidence threshold
+    if final_confidence < min_confidence and final_signal != 'NEUTRAL':
+        final_signal = 'NEUTRAL'
+        reason_text = f"Confidence {final_confidence:.0f}% below threshold {min_confidence}%"
+    else:
+        reason_text = f"Multi-confirmation signal (Trend: {trend_conf:.0f}%, Momentum: {momentum_conf:.0f}%)"
+    
+    # Display signal
+    if final_signal == "BUY":
+        st.markdown(f"""
+        <div class="signal-buy">
+            <h2>🟢 BUY SIGNAL - {final_confidence:.0f}% Confidence</h2>
+            <p><strong>{reason_text}</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+    elif final_signal == "SELL":
+        st.markdown(f"""
+        <div class="signal-sell">
+            <h2>🔴 SELL SIGNAL - {final_confidence:.0f}% Confidence</h2>
+            <p><strong>{reason_text}</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="signal-neutral">
+            <h2>🟡 NEUTRAL / INSUFFICIENT SIGNAL - {final_confidence:.0f}% Confidence</h2>
+            <p><strong>Signal below minimum confidence threshold or mixed confirmations</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+except Exception as e:
+    st.error(f"❌ Error in signal generation: {str(e)}")
+    logger.error(f"Signal generation error: {str(e)}")
 
+# ==================== TECHNICAL INDICATORS ====================
+st.markdown("---")
+st.subheader("📈 Technical Indicators Summary")
+
+ind_cols = st.columns(4)
+with ind_cols[0]:
+    st.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.1f}", help="Overbought: >70, Oversold: <30")
+with ind_cols[1]:
+    atr = df['ATR'].iloc[-1] if 'ATR' in df.columns else 0
+    st.metric("ATR", f"${atr:.4f}", help="Average True Range - Volatility measure")
+with ind_cols[2]:
+    macd = df['MACD'].iloc[-1] if 'MACD' in df.columns else 0
+    st.metric("MACD", f"{macd:.6f}", help="MACD Line value")
+with ind_cols[3]:
+    adx = df['ADX'].iloc[-1] if 'ADX' in df.columns else 0
+    st.metric("ADX", f"{adx:.1f}", help="Trend Strength (>25 = strong)")
+
+# ==================== CONFIRMATION DETAILS ====================
+st.markdown("---")
+st.subheader("✅ Signal Confirmations")
+
+conf_cols = st.columns(4)
+with conf_cols[0]:
+    color = "🟢" if "BULLISH" in trend_signal else "🔴" if "BEARISH" in trend_signal else "🟡"
+    st.write(f"{color} **Trend**: {trend_signal}\n{trend_conf:.0f}% confidence")
+
+with conf_cols[1]:
+    color = "🟢" if "BULLISH" in momentum_signal else "🔴" if "BEARISH" in momentum_signal else "🟡"
+    st.write(f"{color} **Momentum**: {momentum_signal}\n{momentum_conf:.0f}% confidence")
+
+with conf_cols[2]:
+    color = "🟢" if "STRONG" in volume_signal else "🟡" if "GOOD" in volume_signal else "🔴"
+    st.write(f"{color} **Volume**: {volume_signal}\n{volume_conf:.0f}% confidence")
+
+with conf_cols[3]:
+    color = "🟢" if "SUITABLE" in volatility_signal else "🟡"
+    st.write(f"{color} **Volatility**: {volatility_signal}\n{volatility_conf:.0f}% confidence")
+
+# ==================== PRICE CHART WITH INDICATORS ====================
+st.markdown("---")
+st.subheader("💹 Price Chart with Indicators")
+
+try:
+    # Prepare chart data
+    df_chart = df.tail(100).copy()
+    
+    # Create figure with secondary y-axis
+    fig = go.Figure()
+    
+    # Add candlestick
+    fig.add_trace(go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['open'],
+        high=df_chart['high'],
+        low=df_chart['low'],
+        close=df_chart['close'],
+        name='Price',
+        yaxis='y1'
+    ))
+    
+    # Add Bollinger Bands
+    if 'BB_Upper' in df_chart.columns:
+        fig.add_trace(go.Scatter(
+            x=df_chart.index,
+            y=df_chart['BB_Upper'],
+            name='BB Upper',
+            line=dict(color='rgba(200,200,200,0.3)'),
+            yaxis='y1'
+        ))
+        fig.add_trace(go.Scatter(
+            x=df_chart.index,
+            y=df_chart['BB_Lower'],
+            name='BB Lower',
+            line=dict(color='rgba(200,200,200,0.3)'),
+            fill='tonexty',
+            yaxis='y1'
+        ))
+    
+    # Add EMAs
+    if 'EMA_10' in df_chart.columns:
+        fig.add_trace(go.Scatter(
+            x=df_chart.index,
+            y=df_chart['EMA_10'],
+            name='EMA 10',
+            line=dict(color='blue', width=1),
+            yaxis='y1'
+        ))
+    if 'EMA_20' in df_chart.columns:
+        fig.add_trace(go.Scatter(
+            x=df_chart.index,
+            y=df_chart['EMA_20'],
+            name='EMA 20',
+            line=dict(color='orange', width=1),
+            yaxis='y1'
+        ))
+    
+    # Update layout
+    fig.update_layout(
+        title=f"{symbol} - {timeframe} Chart",
+        yaxis_title='Price',
+        xaxis_rangeslider_visible=False,
+        height=500,
+        hovermode='x unified',
+        template='plotly_dark'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+except Exception as e:
+    st.warning(f"⚠️ Chart rendering issue: {str(e)}")
+
+# ==================== RISK MANAGEMENT ====================
+st.markdown("---")
+st.subheader("💼 Risk Management")
+
+if final_signal != 'NEUTRAL' and atr > 0:
+    risk_cols = st.columns(2)
+    
+    with risk_cols[0]:
+        if final_signal == 'BUY':
+            stop_loss = current_price - (atr * 2)
+            take_profit = current_price + (atr * 4)
+        else:  # SELL
+            stop_loss = current_price + (atr * 2)
+            take_profit = current_price - (atr * 4)
+        
+        st.metric("Entry Price", f"${current_price:.4f}")
+        st.metric("Stop Loss", f"${stop_loss:.4f}")
+        st.metric("Take Profit", f"${take_profit:.4f}")
+    
+    with risk_cols[1]:
+        risk_amount = abs(current_price - stop_loss)
+        reward_amount = abs(take_profit - current_price)
+        ratio = reward_amount / risk_amount if risk_amount > 0 else 0
+        
+        st.metric("Risk per pip", f"${risk_amount:.4f}")
+        st.metric("Reward per pip", f"${reward_amount:.4f}")
+        st.metric("Risk:Reward Ratio", f"1:{ratio:.2f}")
 else:
-    st.info("👈 Configure options in the sidebar and click 'Analyze and Generate Signal' to begin")
+    st.info("⚠️ No active signal to calculate risk management setup")
+
+# ==================== FOOTER ====================
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #888; font-size: 12px;'>
+<p>📊 Professional Trading Signal Analyzer | Data Source: Yahoo Finance & Binance API</p>
+<p><strong>Disclaimer:</strong> This tool is for analysis only. Not financial advice. Trade at your own risk.</p>
+</div>
+""", unsafe_allow_html=True)
 
 
