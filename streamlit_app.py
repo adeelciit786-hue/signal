@@ -16,160 +16,128 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+# Show something immediately
+st.write("Loading Signals Bot...")
 
-# Title
-st.title("📈 Signals Bot - Trading Analysis")
+# Add src to path
+try:
+    sys.path.insert(0, str(Path(__file__).parent / 'src'))
+    from src.bot_engine import BotOrchestrator
+    bot_available = True
+except Exception as e:
+    st.error(f"Bot import failed: {e}")
+    bot_available = False
+
+# Main UI
+st.title("📈 Signals Bot")
 st.markdown("Professional Multi-Confirmation Trading Strategy")
 
-# Load bot engine
-@st.cache_resource
-def load_bot():
-    try:
-        from src.bot_engine import BotOrchestrator
-        
-        # Try to load config
-        config_path = 'config.json'
-        if not os.path.exists(config_path):
-            st.error(f"Config.json not found at {config_path}")
-            return None
-        
-        bot = BotOrchestrator(config_path)
-        return bot
-    except Exception as e:
-        st.error(f"Failed to load bot: {str(e)}")
-        return None
-
-# Sidebar configuration
-st.sidebar.header("Configuration")
-
-# Asset and symbol selection
-asset_type = st.sidebar.selectbox(
-    "Asset Type",
-    ["Crypto", "Stock", "Forex"]
-)
-
-symbol_map = {
-    "Crypto": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT"],
-    "Stock": ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"],
-    "Forex": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"]
-}
-
-symbol = st.sidebar.selectbox("Symbol", symbol_map[asset_type])
-timeframe = st.sidebar.selectbox("Timeframe", ["1h", "4h", "1d", "1w"])
-
-st.sidebar.markdown("---")
-
-# Load bot
-bot = load_bot()
-
-if bot:
-    st.sidebar.success("Bot Ready")
-    
-    # Analyze button
-    if st.sidebar.button("Analyze", type="primary", use_container_width=True):
+if bot_available:
+    # Load bot
+    @st.cache_resource
+    def load_bot():
         try:
-            with st.spinner(f"Analyzing {symbol}..."):
-                analysis = bot.engine.analyze_single_asset(
-                    symbol=symbol,
-                    asset_type=asset_type.lower(),
-                    timeframe=timeframe,
-                    backtest=False
-                )
-            
-            if analysis:
-                # Create tabs
-                tab1, tab2, tab3, tab4 = st.tabs(["Signal", "Confirmations", "Setup", "Risk"])
+            config_path = 'config.json'
+            if not os.path.exists(config_path):
+                return None
+            return BotOrchestrator(config_path)
+        except Exception as e:
+            st.error(f"Bot load error: {e}")
+            return None
+    
+    bot = load_bot()
+    
+    if bot:
+        # Sidebar
+        st.sidebar.header("Configuration")
+        
+        asset_type = st.sidebar.selectbox("Asset Type", ["Crypto", "Stock", "Forex"])
+        
+        if asset_type == "Crypto":
+            symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT"]
+        elif asset_type == "Stock":
+            symbols = ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
+        else:
+            symbols = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"]
+        
+        symbol = st.sidebar.selectbox("Symbol", symbols)
+        timeframe = st.sidebar.selectbox("Timeframe", ["1h", "4h", "1d", "1w"])
+        
+        st.sidebar.markdown("---")
+        
+        # Main content
+        st.write(f"Selected: **{symbol}** | Timeframe: **{timeframe}**")
+        
+        if st.button("Analyze", type="primary", use_container_width=True):
+            try:
+                with st.spinner(f"Analyzing {symbol}..."):
+                    analysis = bot.engine.analyze_single_asset(
+                        symbol=symbol,
+                        asset_type=asset_type.lower(),
+                        timeframe=timeframe,
+                        backtest=False
+                    )
                 
-                # Tab 1: Signal
-                with tab1:
+                if analysis:
+                    # Signal
                     signal = analysis.get('signal', 'NEUTRAL')
                     confidence = analysis.get('confidence', 0)
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         if signal == 'BUY':
-                            st.success(f"### {signal}")
+                            st.success(f"## {signal}")
                         elif signal == 'SELL':
-                            st.error(f"### {signal}")
+                            st.error(f"## {signal}")
                         else:
-                            st.warning(f"### {signal}")
+                            st.warning(f"## {signal}")
                     with col2:
                         st.metric("Confidence", f"{confidence:.1f}%")
                     with col3:
                         st.metric("Quality", analysis.get('quality', 'N/A'))
                     
-                    st.markdown("---")
-                    reasons = analysis.get('reasons', {})
-                    if reasons.get('bullish_reasons'):
-                        st.write("**Analysis Reasons:**")
-                        for reason in reasons.get('bullish_reasons', [])[:3]:
-                            st.write(f"• {reason}")
-                
-                # Tab 2: Confirmations
-                with tab2:
-                    confirmations = analysis.get('confirmations', {})
-                    col1, col2, col3, col4 = st.columns(4)
+                    # Tabs
+                    tab1, tab2, tab3 = st.tabs(["Confirmations", "Setup", "Risk"])
                     
-                    with col1:
-                        st.metric("Trend", confirmations.get('trend', 'N/A'))
-                    with col2:
-                        momentum = "Yes" if confirmations.get('momentum_confirmed') else "No"
-                        st.metric("Momentum", momentum)
-                    with col3:
-                        volume = "Yes" if confirmations.get('volume_confirmed') else "No"
-                        st.metric("Volume", volume)
-                    with col4:
-                        volatility = "OK" if confirmations.get('volatility_acceptable') else "High"
-                        st.metric("Volatility", volatility)
-                
-                # Tab 3: Setup
-                with tab3:
-                    setup = analysis.get('setup', {})
-                    col1, col2, col3 = st.columns(3)
+                    with tab1:
+                        confirmations = analysis.get('confirmations', {})
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            st.metric("Trend", confirmations.get('trend', 'N/A'))
+                        with c2:
+                            st.metric("Momentum", "Yes" if confirmations.get('momentum_confirmed') else "No")
+                        with c3:
+                            st.metric("Volume", "Yes" if confirmations.get('volume_confirmed') else "No")
+                        with c4:
+                            st.metric("Volatility", "OK" if confirmations.get('volatility_acceptable') else "High")
                     
-                    with col1:
-                        st.metric("Entry", f"${setup.get('entry', 0):.2f}")
-                    with col2:
-                        st.metric("Stop Loss", f"${setup.get('stop_loss', 0):.2f}")
-                    with col3:
-                        st.metric("Take Profit", f"${setup.get('take_profit', 0):.2f}")
+                    with tab2:
+                        setup = analysis.get('setup', {})
+                        s1, s2, s3 = st.columns(3)
+                        with s1:
+                            st.metric("Entry", f"${setup.get('entry', 0):.2f}")
+                        with s2:
+                            st.metric("Stop Loss", f"${setup.get('stop_loss', 0):.2f}")
+                        with s3:
+                            st.metric("Take Profit", f"${setup.get('take_profit', 0):.2f}")
                     
-                    st.markdown("---")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("R:R Ratio", f"{setup.get('rr_ratio', 0):.2f}:1")
-                    with col2:
-                        st.metric("Position Size", f"{setup.get('position_size', 0):.4f}")
-                
-                # Tab 4: Risk
-                with tab4:
-                    risk_validation = analysis.get('risk_validation', {})
-                    
-                    if risk_validation.get('allowed'):
-                        st.success("Risk Rules APPROVED")
-                    else:
-                        st.error("Risk Rules REJECTED")
-                    
-                    st.markdown("---")
-                    reasons_list = risk_validation.get('reasons', [])
-                    if reasons_list:
-                        st.write("**Risk Checks:**")
-                        for reason in reasons_list[:5]:
-                            st.write(f"• {reason}")
-            else:
-                st.error("Analysis returned no data")
-        
-        except Exception as e:
-            st.error(f"Analysis error: {str(e)}")
+                    with tab3:
+                        risk = analysis.get('risk_validation', {})
+                        if risk.get('allowed'):
+                            st.success("Risk Rules APPROVED")
+                        else:
+                            st.error("Risk Rules REJECTED")
+                else:
+                    st.error("No analysis results")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+    else:
+        st.warning("config.json not found - demo mode")
+        st.info("""
+        To enable full functionality:
+        1. Ensure config.json exists in project root
+        2. Check bot engine initialization
+        """)
 else:
-    st.warning("Bot engine not available")
-    st.info("""
-    ### Setup Required
-    
-    Make sure:
-    1. config.json exists in the root directory
-    2. All dependencies are installed
-    3. Bot engine modules are in src/ folder
-    """)
+    st.error("Bot engine not available")
+
