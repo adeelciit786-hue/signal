@@ -35,21 +35,35 @@ class EnhancedSignalEngine:
         latest = df.iloc[-1]
         close = latest['close']
         
-        # Basic MAs
-        ema_10 = latest.get('EMA_10', close)
-        ema_20 = latest.get('EMA_20', close)
-        ema_50 = latest.get('EMA_50', close)
-        sma_200 = latest.get('SMA_200', close)
+        # Basic MAs - use close price if not available
+        ema_10 = latest.get('EMA_10')
+        ema_20 = latest.get('EMA_20')
+        ema_50 = latest.get('EMA_50')
+        sma_200 = latest.get('SMA_200')
+        
+        # Fill NaN with close price
+        ema_10 = ema_10 if pd.notna(ema_10) else close
+        ema_20 = ema_20 if pd.notna(ema_20) else close
+        ema_50 = ema_50 if pd.notna(ema_50) else close
+        sma_200 = sma_200 if pd.notna(sma_200) else close
         
         # ADX trend strength
-        adx = latest.get('ADX', 0)
+        adx = latest.get('ADX', 25)  # Default to moderate trend
+        if pd.isna(adx):
+            adx = 25
         
         # Supertrend
-        st_trend = latest.get('Supertrend_Trend', 0)
+        st_trend = latest.get('Supertrend_Trend', 1)  # Default to 1 (bullish)
+        if pd.isna(st_trend):
+            st_trend = 1
         
         # Aroon trend
         aroon_up = latest.get('Aroon_Up', 50)
         aroon_down = latest.get('Aroon_Down', 50)
+        if pd.isna(aroon_up):
+            aroon_up = 50
+        if pd.isna(aroon_down):
+            aroon_down = 50
         
         # Count bullish signals
         bullish_signals = 0
@@ -67,9 +81,9 @@ class EnhancedSignalEngine:
             bullish_signals += 1
             bullish_reasons.append("Price > SMA 200")
         
-        if adx > 25:
+        if adx > 20:  # Lowered threshold
             bullish_signals += 1
-            bullish_reasons.append("Strong Trend (ADX > 25)")
+            bullish_reasons.append(f"Trend Strength (ADX {adx:.1f})")
         
         if st_trend == 1:
             bullish_signals += 1
@@ -82,26 +96,46 @@ class EnhancedSignalEngine:
         # Bearish signals
         bearish_signals = 6 - bullish_signals
         bearish_reasons = [
-            r.replace("Bullish", "Bearish").replace(">", "<") for r in bullish_reasons
+            "EMA 10 < EMA 20",
+            "EMA 20 < EMA 50",
+            "Price < SMA 200",
+            f"Weak Trend (ADX {adx:.1f})",
+            "Supertrend Bearish",
+            "Aroon Bearish"
         ]
         
-        if bullish_signals > bearish_signals:
+        # Determine trend - LOWER THRESHOLD FOR GENERATION
+        if bullish_signals >= 3:  # 3+ signals = BULLISH
             trend = "BULLISH"
-            confidence = (bullish_signals / 6) * 100
-        elif bearish_signals > bullish_signals:
+            confidence = min(100, (bullish_signals / 6) * 100)
+        elif bearish_signals >= 3:
             trend = "BEARISH"
-            confidence = (bearish_signals / 6) * 100
+            confidence = min(100, (bearish_signals / 6) * 100)
         else:
-            trend = "NEUTRAL"
-            confidence = 50
+            # With fewer signals, still try to determine direction
+            if bullish_signals > bearish_signals:
+                trend = "BULLISH"
+                confidence = min(100, (bullish_signals / 6) * 100)
+            elif bearish_signals > bullish_signals:
+                trend = "BEARISH"
+                confidence = min(100, (bearish_signals / 6) * 100)
+            else:
+                trend = "NEUTRAL"
+                confidence = 50
         
         return {
             'trend': trend,
-            'confidence': min(100, confidence),
+            'confidence': min(100, max(50, confidence)),  # Min 50% confidence
             'bullish_signals': bullish_signals,
-            'reasons': bullish_reasons if trend == "BULLISH" else bearish_reasons,
+            'bearish_signals': bearish_signals,
+            'reasons': bullish_reasons if trend == "BULLISH" else bearish_reasons[:bullish_signals],
             'adx': adx,
-            'supertrend': st_trend
+            'supertrend': st_trend,
+            'ema_10': ema_10,
+            'ema_20': ema_20,
+            'ema_50': ema_50,
+            'sma_200': sma_200,
+            'close': close
         }
     
     @staticmethod
@@ -111,61 +145,89 @@ class EnhancedSignalEngine:
         """
         latest = df.iloc[-1]
         
-        rsi = latest.get('RSI', 50)
-        macd_hist = latest.get('MACD_Histogram', 0)
-        roc = latest.get('ROC', 0)
-        williams_r = latest.get('Williams_R', -50)
-        mfi = latest.get('MFI', 50)
+        rsi = latest.get('RSI')
+        macd_hist = latest.get('MACD_Histogram')
+        roc = latest.get('ROC')
+        williams_r = latest.get('Williams_R')
+        mfi = latest.get('MFI')
+        
+        # Fill NaN with neutral values
+        if pd.isna(rsi):
+            rsi = 50
+        if pd.isna(macd_hist):
+            macd_hist = 0
+        if pd.isna(roc):
+            roc = 0
+        if pd.isna(williams_r):
+            williams_r = -50
+        if pd.isna(mfi):
+            mfi = 50
         
         confirmation_score = 0
         bullish_indicators = []
         
-        # RSI analysis
-        if 40 < rsi < 70:
+        # RSI analysis - more lenient
+        if 30 < rsi < 80:  # Wider range
             confirmation_score += 1
-            bullish_indicators.append("RSI Healthy Bullish")
-        elif rsi > 70:
+            bullish_indicators.append(f"RSI: {rsi:.1f}")
+        elif rsi >= 50:  # Even weak bullish is ok
             confirmation_score += 0.5
-            bullish_indicators.append("RSI Overbought (caution)")
+            bullish_indicators.append(f"RSI: {rsi:.1f}")
         
         # MACD
-        if macd_hist > 0 and len(df) > 1:
+        if macd_hist > 0:
+            confirmation_score += 1
+            bullish_indicators.append("MACD Positive")
+            if len(df) > 1:
+                prev_hist = df.iloc[-2].get('MACD_Histogram', 0)
+                if pd.isna(prev_hist):
+                    prev_hist = 0
+                if macd_hist > prev_hist:
+                    bullish_indicators[-1] += " (Increasing)"
+        elif len(df) > 1:
             prev_hist = df.iloc[-2].get('MACD_Histogram', 0)
-            if macd_hist > prev_hist:
-                confirmation_score += 1
-                bullish_indicators.append("MACD Increasing Bullish")
-            else:
-                confirmation_score += 0.5
-                bullish_indicators.append("MACD Positive but Weakening")
+            if pd.isna(prev_hist):
+                prev_hist = 0
+            if prev_hist > 0 and macd_hist > prev_hist * 0.5:
+                confirmation_score += 0.3
+                bullish_indicators.append("MACD Weakening but Positive")
         
         # ROC (Rate of Change)
         if roc > 0:
             confirmation_score += 1
-            bullish_indicators.append(f"ROC Positive ({roc:.2f}%)")
+            bullish_indicators.append(f"ROC: {roc:.2f}%")
+        elif roc > -0.5:  # Slightly negative is ok
+            confirmation_score += 0.3
+            bullish_indicators.append(f"ROC: {roc:.2f}%")
         
-        # Williams %R
+        # Williams %R - more lenient
         if -80 < williams_r < -20:
             confirmation_score += 1
-            bullish_indicators.append("Williams %R Healthy")
+            bullish_indicators.append(f"Williams %R: {williams_r:.1f}")
+        elif -95 < williams_r < 0:
+            confirmation_score += 0.3
+            bullish_indicators.append(f"Williams %R: {williams_r:.1f}")
         
-        # MFI
-        if 40 < mfi < 80:
+        # MFI - more lenient
+        if 30 < mfi < 90:
             confirmation_score += 1
-            bullish_indicators.append("MFI Healthy")
-        elif mfi > 80:
-            confirmation_score += 0.5
-            bullish_indicators.append("MFI Overbought")
+            bullish_indicators.append(f"MFI: {mfi:.1f}")
+        elif mfi > 40:
+            confirmation_score += 0.3
+            bullish_indicators.append(f"MFI: {mfi:.1f}")
         
         max_score = 5
-        confidence = (confirmation_score / max_score) * 100
+        confidence = min(100, (confirmation_score / max_score) * 100)
         
+        # LOWER THRESHOLD - need 1.5 or more for confirmation
         return {
-            'confirmed': confirmation_score >= 3,
-            'confidence': min(100, confidence),
+            'confirmed': confirmation_score >= 1.5,
+            'confidence': min(100, max(50, confidence)),  # Min 50%
             'score': confirmation_score,
             'indicators': bullish_indicators,
             'rsi': rsi,
-            'mfi': mfi
+            'mfi': mfi,
+            'macd_hist': macd_hist
         }
     
     @staticmethod
@@ -299,79 +361,46 @@ class EnhancedSignalEngine:
             'volatility': volatility_eval
         }
         
-        # ========== STRICT RULE LOGIC ==========
+        # ========== STRICT RULE LOGIC (SIMPLIFIED) ==========
         
         if trend_eval['trend'] == "BULLISH":
             # Trend is bullish, check other conditions
             
             if momentum_eval['confirmed']:
-                # Momentum confirms
+                # Trend + Momentum = BUY (volume and volatility are secondary)
+                signal = "BUY"
+                confidence = (trend_eval['confidence'] + momentum_eval['confidence']) / 2
                 
-                if volume_eval['confirmed']:
-                    # Volume confirms
-                    
-                    if volatility_eval['acceptable']:
-                        # All conditions met → BUY
-                        signal = "BUY"
-                        confidence = min(
-                            trend_eval['confidence'],
-                            momentum_eval['confidence'],
-                            volume_eval['confidence']
-                        )
-                        
-                        # Grade the signal
-                        if confidence > 85:
-                            quality = SignalQuality.STRONG.value
-                        elif confidence > 70:
-                            quality = SignalQuality.GOOD.value
-                        else:
-                            quality = SignalQuality.WEAK.value
-                    else:
-                        # Volatility issue
-                        signal = "NEUTRAL"
-                        confidence = 40
-                        quality = SignalQuality.NEUTRAL.value
+                # Grade the signal
+                if confidence > 75:
+                    quality = SignalQuality.STRONG.value
+                elif confidence > 60:
+                    quality = SignalQuality.GOOD.value
                 else:
-                    # Volume doesn't confirm
-                    signal = "NEUTRAL"
-                    confidence = 45
-                    quality = SignalQuality.NEUTRAL.value
+                    quality = SignalQuality.WEAK.value
             else:
-                # Momentum doesn't confirm
+                # Trend without momentum confirmation
                 signal = "NEUTRAL"
-                confidence = 50
+                confidence = 55
                 quality = SignalQuality.NEUTRAL.value
         
         elif trend_eval['trend'] == "BEARISH":
-            # Repeat for SELL signals
+            # Trend is bearish, check momentum
             
             if momentum_eval['confirmed']:
-                if volume_eval['confirmed']:
-                    if volatility_eval['acceptable']:
-                        signal = "SELL"
-                        confidence = min(
-                            trend_eval['confidence'],
-                            momentum_eval['confidence'],
-                            volume_eval['confidence']
-                        )
-                        
-                        if confidence > 85:
-                            quality = SignalQuality.STRONG.value
-                        elif confidence > 70:
-                            quality = SignalQuality.GOOD.value
-                        else:
-                            quality = SignalQuality.WEAK.value
-                    else:
-                        signal = "NEUTRAL"
-                        confidence = 40
-                        quality = SignalQuality.NEUTRAL.value
+                # Trend + Momentum = SELL
+                signal = "SELL"
+                confidence = (trend_eval['confidence'] + momentum_eval['confidence']) / 2
+                
+                if confidence > 75:
+                    quality = SignalQuality.STRONG.value
+                elif confidence > 60:
+                    quality = SignalQuality.GOOD.value
                 else:
-                    signal = "NEUTRAL"
-                    confidence = 45
-                    quality = SignalQuality.NEUTRAL.value
+                    quality = SignalQuality.WEAK.value
             else:
                 signal = "NEUTRAL"
-                confidence = 50
+                confidence = 55
                 quality = SignalQuality.NEUTRAL.value
         
         else:
