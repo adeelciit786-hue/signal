@@ -288,6 +288,44 @@ class SignalGenerator:
         else:
             return 'No-Trade'
     
+    def generate_signal(self, df: pd.DataFrame) -> Dict:
+        """
+        Generate signal from OHLCV DataFrame (for backtesting)
+        
+        Args:
+            df: OHLCV DataFrame with technical indicators already calculated
+            
+        Returns:
+            Dict with 'signal' and 'confidence' keys
+        """
+        try:
+            if df.empty or len(df) < 50:
+                return {'signal': 'NEUTRAL', 'confidence': 0}
+            
+            # Calculate indicators if not present
+            from .technical_indicators import TechnicalIndicators
+            if 'RSI' not in df.columns:
+                df = TechnicalIndicators.calculate_all_indicators(df)
+            
+            # Evaluate signals
+            trend_signal = StrategyLogic.evaluate_trend(df)
+            momentum_signal = StrategyLogic.evaluate_momentum(df)
+            volume_signal = StrategyLogic.evaluate_volume(df)
+            volatility_signal = StrategyLogic.evaluate_volatility_suitability(df, 'TRENDING')
+            
+            # Generate composite signal
+            composite = StrategyLogic.generate_composite_signal(
+                trend_signal, momentum_signal, volume_signal, volatility_signal, 'TRENDING'
+            )
+            
+            return {
+                'signal': composite['signal'],
+                'confidence': min(100, max(0, composite['confidence']))
+            }
+        except Exception as e:
+            logger.debug(f"Error generating signal: {str(e)}")
+            return {'signal': 'NEUTRAL', 'confidence': 0}
+    
     @staticmethod
     def _create_no_trade_response(symbol: str, reason: str) -> Dict:
         """Create NO TRADE response"""
