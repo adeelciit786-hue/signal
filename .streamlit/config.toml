@@ -5,6 +5,10 @@ toolbarMode = "viewer"
 [server]
 maxUploadSize = 200
 enableXsrfProtection = true
+runOnSave = true
 
 [logger]
 level = "info"
+
+[deployment]
+primaryCommand = "streamlit run streamlit_app.py"
