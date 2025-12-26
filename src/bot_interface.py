@@ -18,13 +18,13 @@ class BotInterface:
     def print_header():
         """Print application header"""
         header = """
-╔════════════════════════════════════════════════════════════════════╗
-║                                                                    ║
-║              SIGNALS BOT - PROFESSIONAL TRADING BOT               ║
-║                                                                    ║
-║        Multi-Confirmation Strategy | Risk-Managed Trading        ║
-║                                                                    ║
-╚════════════════════════════════════════════════════════════════════╝
+==================================================================
+                                                                  
+       SIGNALS BOT - PROFESSIONAL TRADING BOT                    
+                                                                  
+   Multi-Confirmation Strategy | Risk-Managed Trading           
+                                                                  
+==================================================================
         """
         print(header)
     
@@ -36,7 +36,7 @@ class BotInterface:
         quality = analysis.get('quality', 'NEUTRAL')
         
         # Color coding
-        signal_color = '🟢' if signal == 'BUY' else ('🔴' if signal == 'SELL' else '🟡')
+        signal_color = '[BUY]' if signal == 'BUY' else ('[SELL]' if signal == 'SELL' else '[NEUTRAL]')
         quality_color = '***' if 'STRONG' in quality else ('**' if 'GOOD' in quality else '*')
         
         print(f"\n+{'-'*68}+")
