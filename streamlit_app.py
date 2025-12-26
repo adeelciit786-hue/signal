@@ -4,6 +4,10 @@ Streamlit App for Signals Bot - Professional Trading Signal Generator
 import streamlit as st
 import sys
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
 
 # Page config
 st.set_page_config(
@@ -20,12 +24,19 @@ st.divider()
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Import modules
+# Import modules directly (not as package)
 try:
-    from bot_config import BotConfig
-    from bot_engine import BotOrchestrator
+    # Import individual modules first to avoid relative import issues
+    import bot_config
+    import bot_engine
+    
+    BotConfig = bot_config.BotConfig
+    BotOrchestrator = bot_engine.BotOrchestrator
+    st.success("✅ Modules loaded successfully")
 except Exception as e:
-    st.error(f"❌ Import Error: {e}")
+    st.error(f"❌ Import Error: {str(e)}")
+    import traceback
+    st.code(traceback.format_exc())
     st.stop()
 
 # Sidebar

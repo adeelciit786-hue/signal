@@ -9,16 +9,30 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
-from .data_fetcher import DataFetcher
-from .technical_indicators import TechnicalIndicators
-from .advanced_indicators import AdvancedIndicators
-from .market_regime import MarketRegimeDetector
-from .enhanced_signal_engine import EnhancedSignalEngine
-from .enhanced_risk_manager import EnhancedRiskManager
-from .backtest_engine import BacktestEngine
-from .news_sentiment import NewsAndSentiment
-from .bot_config import BotConfig
-from .bot_interface import BotInterface
+try:
+    # Try relative imports first (when run as package)
+    from .data_fetcher import DataFetcher
+    from .technical_indicators import TechnicalIndicators
+    from .advanced_indicators import AdvancedIndicators
+    from .market_regime import MarketRegimeDetector
+    from .enhanced_signal_engine import EnhancedSignalEngine
+    from .enhanced_risk_manager import EnhancedRiskManager
+    from .backtest_engine import BacktestEngine
+    from .news_sentiment import NewsAndSentiment
+    from .bot_config import BotConfig
+    from .bot_interface import BotInterface
+except ImportError:
+    # Fall back to direct imports (when imported directly)
+    from data_fetcher import DataFetcher
+    from technical_indicators import TechnicalIndicators
+    from advanced_indicators import AdvancedIndicators
+    from market_regime import MarketRegimeDetector
+    from enhanced_signal_engine import EnhancedSignalEngine
+    from enhanced_risk_manager import EnhancedRiskManager
+    from backtest_engine import BacktestEngine
+    from news_sentiment import NewsAndSentiment
+    from bot_config import BotConfig
+    from bot_interface import BotInterface
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
