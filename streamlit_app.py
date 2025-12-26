@@ -118,7 +118,7 @@ if analyze_btn:
             
             # Create bot and analyze
             bot = BotOrchestrator(config)
-            result = bot.analyze_single_asset(
+            result = bot.engine.analyze_single_asset(
                 symbol=symbol,
                 asset_type=asset_type,
                 timeframe=timeframe,

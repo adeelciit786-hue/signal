@@ -98,6 +98,30 @@ class DataFetcher:
         
         return timeframes_data
     
+    def fetch_data(self, symbol: str, asset_type: str = 'crypto', timeframe: str = '1h', lookback_days: int = 30) -> pd.DataFrame:
+        """
+        Unified fetch_data method for compatibility
+        
+        Args:
+            symbol: Trading pair/ticker
+            asset_type: 'crypto', 'forex', or 'stock'
+            timeframe: '1h', '4h', '1d', '1w'
+            lookback_days: Number of days of historical data
+            
+        Returns:
+            DataFrame with OHLCV data
+        """
+        try:
+            if asset_type == 'crypto':
+                return self.fetch_crypto_ohlcv(symbol, timeframe, limit=500)
+            else:  # stock or forex
+                # Map timeframe to yfinance interval
+                period = f"{lookback_days}d"
+                return self.fetch_stock_ohlcv(symbol, period=period, interval=timeframe)
+        except Exception as e:
+            logger.error(f"Error fetching {symbol} ({asset_type}, {timeframe}): {str(e)}")
+            return pd.DataFrame()
+    
     def get_current_price(self, symbol: str, asset_type: str = 'crypto') -> float:
         """Get current price for a symbol"""
         try:
