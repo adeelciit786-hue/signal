@@ -79,18 +79,29 @@ class SignalsBotEngine:
             logger.debug("Step 1: Fetching market data...")
             df = self.data_fetcher.fetch_data(symbol, asset_type, timeframe, lookback_days=30)
             
+            logger.info(f"Data shape: {df.shape}, columns: {df.columns.tolist() if not df.empty else 'empty'}")
+            
             if df is None or df.empty:
                 logger.warning(f"No data available for {symbol}")
                 return self._neutral_signal(symbol, reason="No data available")
             
-            if len(df) < 30:
-                logger.warning(f"Insufficient data for {symbol}")
-                return self._neutral_signal(symbol, reason="Insufficient historical data")
+            if len(df) < 10:
+                logger.warning(f"Insufficient data for {symbol} - only {len(df)} candles")
+                return self._neutral_signal(symbol, reason=f"Insufficient data ({len(df)} candles)")
             
             # Step 2: Calculate all indicators
             logger.debug("Step 2: Calculating technical indicators...")
-            df = self.tech_indicators.calculate_all_indicators(df, symbol)
-            df = self.advanced_indicators.calculate_all_advanced_indicators(df, symbol)
+            try:
+                df = self.tech_indicators.calculate_all_indicators(df)
+                logger.debug(f"Tech indicators added, columns: {df.columns.tolist()}")
+            except Exception as e:
+                logger.error(f"Error calculating tech indicators: {e}")
+            
+            try:
+                df = self.advanced_indicators.calculate_all_advanced_indicators(df)
+                logger.debug(f"Advanced indicators added")
+            except Exception as e:
+                logger.error(f"Error calculating advanced indicators: {e}")
             
             # Step 3: Detect market regime
             logger.debug("Step 3: Detecting market regime...")
@@ -98,7 +109,7 @@ class SignalsBotEngine:
             
             # Step 4: Analyze with enhanced signal engine
             logger.debug("Step 4: Running enhanced signal analysis...")
-            signal_analysis = self.signal_engine.analyze(df, symbol)
+            signal_analysis = self.signal_engine.apply_strict_signal_rules(df)
             
             # Step 5: Run backtest if enabled
             backtest_results = None
@@ -383,8 +394,8 @@ class BotOrchestrator:
                 
                 df = self.engine.data_fetcher.fetch_data(symbol, asset_type, '1h', lookback_days=30)
                 if df is not None:
-                    df = self.engine.tech_indicators.calculate_all_indicators(df, symbol)
-                    signal_analysis = self.engine.signal_engine.analyze(df, symbol)
+                    df = self.engine.tech_indicators.calculate_all_indicators(df)
+                    signal_analysis = self.engine.signal_engine.apply_strict_signal_rules(df)
                     
                     backtest_result = self.engine._run_backtest(df, symbol, signal_analysis)
                     if backtest_result:
