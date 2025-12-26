@@ -152,8 +152,20 @@ class SignalsBotEngine:
             
             # Step 7: News sentiment (if available)
             logger.debug("Step 7: Checking news sentiment...")
-            sentiment = self.news_analyzer.analyze_sentiment(symbol)
-            signal_analysis['sentiment'] = sentiment
+            try:
+                news_articles = self.news_analyzer.simulate_news_feed(symbol)
+                if news_articles:
+                    sentiment_text = " ".join([
+                        f"{article.get('title', '')} {article.get('description', '')}"
+                        for article in news_articles[:3]
+                    ])
+                    sentiment, strength = self.news_analyzer.analyze_sentiment_keywords(sentiment_text)
+                else:
+                    sentiment = 'NEUTRAL'
+                signal_analysis['sentiment'] = sentiment
+            except Exception as e:
+                logger.debug(f"Could not analyze sentiment: {e}")
+                signal_analysis['sentiment'] = 'NEUTRAL'
             
             # Step 8: Add backtest results if available
             if backtest_results:
