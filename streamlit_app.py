@@ -154,12 +154,23 @@ with st.spinner("🔄 Fetching market data..."):
     try:
         # Fetch data
         fetcher = DataFetcher()
+        logger.info(f"Attempting to fetch {symbol} ({asset_type}, {timeframe})")
+        
         df = fetcher.fetch_data(symbol, asset_type, timeframe, lookback_days=90)
         
-        if df.empty or len(df) < 50:
-            st.error(f"❌ Insufficient data for {symbol}. Got {len(df)} candles, need at least 50.")
-            st.info("**Troubleshooting:**\n- Check symbol spelling\n- Try different timeframe\n- Ensure market is open")
+        if df.empty or len(df) == 0:
+            st.error(f"❌ Failed to fetch data for {symbol}. No data returned from any source.")
+            st.info("**Troubleshooting steps:**\n1. Check your internet connection\n2. Verify symbol spelling\n3. Try a different timeframe (e.g., 1h or 4h)\n4. Ensure the market is open for this asset")
             st.stop()
+        
+        if len(df) < 50:
+            st.warning(f"⚠️ Low data: Only {len(df)} candles fetched (need 50+)")
+            if len(df) < 10:
+                st.error(f"❌ Insufficient data for {symbol}. Got {len(df)} candles, need at least 50.")
+                st.info("**Troubleshooting:**\n- Try a different timeframe\n- Check symbol spelling\n- Ensure market is open")
+                st.stop()
+        
+        logger.info(f"Successfully fetched {len(df)} candles for {symbol}")
         
         # Calculate all technical indicators
         TechnicalIndicators.calculate_all_indicators(df)
@@ -173,6 +184,8 @@ with st.spinner("🔄 Fetching market data..."):
     except Exception as e:
         st.error(f"❌ Error fetching data: {str(e)}")
         logger.error(f"Data fetch error for {symbol}: {str(e)}")
+        logger.exception("Full traceback:")
+        st.info("**Troubleshooting:**\n- Check your internet connection\n- Verify the symbol exists\n- Try a different timeframe")
         st.stop()
 
 # ==================== SIGNAL GENERATION ====================

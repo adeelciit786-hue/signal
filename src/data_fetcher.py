@@ -51,8 +51,10 @@ class DataFetcher:
                 if self.binance is None:
                     raise Exception("Binance not initialized")
                 
+                logger.info(f"Fetching {symbol} from Binance (attempt {attempt + 1}/3)...")
                 ohlcv = self.binance.fetch_ohlcv(symbol, timeframe, limit=limit)
-                if not ohlcv:
+                
+                if not ohlcv or len(ohlcv) == 0:
                     raise Exception(f"No data returned for {symbol}")
                 
                 df = pd.DataFrame(
@@ -64,30 +66,36 @@ class DataFetcher:
                 
                 # Ensure data quality
                 df = df.dropna()
+                
                 if len(df) > 50:
                     logger.info(f"Successfully fetched {len(df)} candles for {symbol} from Binance")
                     return df
                 else:
+                    logger.warning(f"Only {len(df)} candles returned for {symbol}, need 50+")
                     raise Exception(f"Insufficient data: only {len(df)} candles")
                     
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {str(e)}")
                 if attempt < 2:
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                    wait_time = 2 ** attempt
+                    logger.info(f"Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
         
         # Fallback: Try to fetch from Yahoo Finance
-        logger.warning(f"Binance fetch failed, trying Yahoo Finance fallback for {symbol}")
+        logger.warning(f"Binance fetch failed after 3 attempts, trying Yahoo Finance fallback for {symbol}")
         return self._fetch_crypto_yfinance_fallback(symbol, timeframe)
     
     def _fetch_crypto_yfinance_fallback(self, symbol: str, timeframe: str = '1h') -> pd.DataFrame:
         """Fallback crypto fetch using Yahoo Finance"""
         try:
             # Convert CCXT symbol to Yahoo Finance format
-            yf_symbol = symbol.replace('/', '-')
+            # BTC/USDT -> BTCUSDT (no dash for crypto on Yahoo)
+            yf_symbol = symbol.replace('/', '')
             
             period_map = {'1m': '7d', '5m': '60d', '15m': '60d', '1h': '90d', '4h': '360d', '1d': '5y'}
             period = period_map.get(timeframe, '90d')
             
+            logger.info(f"Fetching {symbol} from Yahoo Finance as {yf_symbol}")
             df = yf.download(yf_symbol, period=period, interval=timeframe, progress=False)
             
             if df is None or len(df) == 0:
@@ -99,8 +107,12 @@ class DataFetcher:
             df.columns = ['open', 'high', 'low', 'close', 'volume']
             df = df.dropna()
             
-            logger.info(f"Successfully fetched {len(df)} candles for {symbol} from Yahoo Finance fallback")
-            return df
+            if len(df) > 50:
+                logger.info(f"Successfully fetched {len(df)} candles for {symbol} from Yahoo Finance fallback")
+                return df
+            else:
+                logger.warning(f"Insufficient data from Yahoo: {len(df)} candles")
+                return pd.DataFrame()
         except Exception as e:
             logger.error(f"Yahoo Finance fallback also failed for {symbol}: {str(e)}")
             return pd.DataFrame()
