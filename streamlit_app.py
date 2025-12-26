@@ -299,9 +299,9 @@ if analyze_button or st.session_state.analysis_result:
             trend = confirmations.get('trend', 'N/A')
             trend_strength = confirmations.get('trend_strength', '0%')
             
-            if 'BULLISH' in trend:
+            if 'BULLISH' in str(trend):
                 st.success(f"**Trend:** {trend}")
-            elif 'BEARISH' in trend:
+            elif 'BEARISH' in str(trend):
                 st.error(f"**Trend:** {trend}")
             else:
                 st.info(f"**Trend:** {trend}")
@@ -326,12 +326,43 @@ if analyze_button or st.session_state.analysis_result:
             if volume_ok:
                 st.success("**Volume:** Confirmed ✓")
             else:
-                st.warning("**Volume:** Low ✗")
+                st.info("**Volume:** Low (⚠️ but OK)")
             
             if volatility_ok:
                 st.caption("Volatility: Acceptable ✓")
             else:
                 st.caption("Volatility: High ⚠️")
+        
+        # Add explanation of signal logic
+        st.markdown("---")
+        with st.expander("📖 How Signals Are Generated (Click to expand)", expanded=False):
+            st.markdown("""
+            ### Signal Generation Logic
+            
+            **PRIMARY REQUIREMENTS (MUST have both):**
+            1. ✓ **Trend**: BULLISH (>45% confidence) OR BEARISH (>45% confidence)
+            2. ✓ **Momentum**: Confirmed by indicators (>45% confidence)
+            
+            **SECONDARY FACTORS (Enhance signal quality):**
+            - 📊 **Volume**: Confirmed = bonus +5% confidence
+            - 🌊 **Volatility**: Acceptable range = no penalty
+            
+            **SIGNAL TYPES:**
+            - 🟢 **BUY**: Bullish trend + Momentum confirmed
+            - 🔴 **SELL**: Bearish trend + Momentum confirmed  
+            - 🟡 **NEUTRAL**: No clear trend OR momentum not confirmed
+            
+            **Why you might see signals with low volume?**
+            - In range-bound markets, volume is naturally lower
+            - Momentum indicators still confirm the trend
+            - Modern algorithms trade off momentum alone
+            - Low volume doesn't invalidate the signal
+            
+            **Confidence Scoring:**
+            - Base: (Trend% + Momentum%) / 2
+            - Bonus: +5% if volume also confirms
+            - Maximum: 95% (leave 5% margin for uncertainty)
+            """)
         
         st.markdown("---")
         
