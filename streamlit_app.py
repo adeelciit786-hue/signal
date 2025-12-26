@@ -153,47 +153,53 @@ symbols_dict = {
     ],
     "Commodities": [
         # Precious Metals
-        "GC=F",      # Gold Futures
-        "SI=F",      # Silver Futures
-        "PL=F",      # Platinum Futures
-        "PA=F",      # Palladium Futures
+        "Gold (GC=F)",
+        "Silver (SI=F)",
+        "Platinum (PL=F)",
+        "Palladium (PA=F)",
         
         # Energy
-        "CL=F",      # Crude Oil (WTI)
-        "BZ=F",      # Brent Crude
-        "NG=F",      # Natural Gas
-        "HO=F",      # Heating Oil
-        "RB=F",      # RBOB Gasoline
+        "Crude Oil - WTI (CL=F)",
+        "Brent Crude (BZ=F)",
+        "Natural Gas (NG=F)",
+        "Heating Oil (HO=F)",
+        "RBOB Gasoline (RB=F)",
         
         # Agricultural
-        "ZW=F",      # Wheat
-        "ZC=F",      # Corn
-        "ZS=F",      # Soybeans
-        "ZL=F",      # Soybean Oil
-        "ZM=F",      # Soybean Meal
-        "CC=F",      # Cocoa
-        "KC=F",      # Coffee
-        "SB=F",      # Sugar
-        "CT=F",      # Cotton
+        "Wheat (ZW=F)",
+        "Corn (ZC=F)",
+        "Soybeans (ZS=F)",
+        "Soybean Oil (ZL=F)",
+        "Soybean Meal (ZM=F)",
+        "Cocoa (CC=F)",
+        "Coffee (KC=F)",
+        "Sugar (SB=F)",
+        "Cotton (CT=F)",
         
         # Livestock
-        "LC=F",      # Live Cattle
-        "LH=F",      # Lean Hogs
-        "GF=F",      # Feeder Cattle
+        "Live Cattle (LC=F)",
+        "Lean Hogs (LH=F)",
+        "Feeder Cattle (GF=F)",
         
         # Metals
-        "HG=F",      # Copper
-        "AL=F",      # Aluminum
-        "ZN=F",      # Zinc
-        "NI=F"       # Nickel
+        "Copper (HG=F)",
+        "Aluminum (AL=F)",
+        "Zinc (ZN=F)",
+        "Nickel (NI=F)"
     ]
 }
 
-symbol = st.sidebar.selectbox(
+symbol_display = st.sidebar.selectbox(
     "Trading Pair",
     symbols_dict[asset_display],
     help="Select the trading symbol to analyze"
 )
+
+# Extract actual symbol from display name (e.g., "Gold (GC=F)" -> "GC=F")
+if "(" in symbol_display and ")" in symbol_display:
+    symbol = symbol_display.split("(")[1].split(")")[0]
+else:
+    symbol = symbol_display
 
 # Timeframe selection
 timeframe = st.sidebar.selectbox(
