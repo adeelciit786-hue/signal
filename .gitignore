@@ -48,10 +48,6 @@ signals_bot.log*
 # OS
 .DS_Store
 Thumbs.db
-
-# Streamlit
-.streamlit/secrets.toml
-.streamlit/.gitignore
 .DS_Store?
 ._*
 .Spotlight-V100
