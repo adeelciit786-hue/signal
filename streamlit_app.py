@@ -1,80 +1,74 @@
-"""Signals Bot - Streamlit Web Application"""
-
 import streamlit as st
 
-# FIRST thing - page config must come before any other st commands
 st.set_page_config(page_title="Signals Bot", layout="wide")
 
-# SECOND thing - show something immediately so we know app is running
-st.write("Starting Signals Bot...")
+st.write("TEST - App is loading")
+st.title("Signals Bot")
+st.write("If you see this, Streamlit is working!")
 
-import sys
-from pathlib import Path
-import logging
-import os
+st.markdown("---")
+st.subheader("Status Check")
 
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
+# Test 1: Can we import sys?
+try:
+    import sys
+    st.write("OK - sys imported")
+except Exception as e:
+    st.error(f"FAIL - sys import: {e}")
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+# Test 2: Can we add to path?
+try:
+    from pathlib import Path
+    import os
+    sys.path.insert(0, str(Path(__file__).parent / 'src'))
+    st.write("OK - Path updated")
+except Exception as e:
+    st.error(f"FAIL - Path update: {e}")
 
-# Try to import bot engine
+# Test 3: Can we find config.json?
+try:
+    config_exists = os.path.exists('config.json')
+    st.write(f"config.json exists: {config_exists}")
+    st.write(f"Current directory: {os.getcwd()}")
+    files = os.listdir('.')
+    st.write(f"Files in directory ({len(files)} total): {files[:10]}")
+except Exception as e:
+    st.error(f"FAIL - Config check: {e}")
+
+# Test 4: Can we import bot?
 try:
     from src.bot_engine import BotOrchestrator
-    st.write("Bot engine imported successfully")
-    bot_import_success = True
-except Exception as e:
-    st.error(f"Failed to import bot engine: {e}")
-    st.stop()
-    bot_import_success = False
-
-st.write("Loading bot engine...")
-
-try:
-    st.write("Checking for config file...")
+    st.write("OK - BotOrchestrator imported")
+    
+    # Try to load bot
     if os.path.exists('config.json'):
-        st.write("Config found - initializing bot...")
         bot = BotOrchestrator('config.json')
-        st.success("Bot initialized successfully!")
-    else:
-        st.warning("config.json not found in current directory")
-        bot = None
-except Exception as e:
-    st.error(f"Error initializing bot: {e}")
-    st.write(f"Current directory: {os.getcwd()}")
-    bot = None
-
-st.write("---")
-
-if bot:
-    st.title("Signals Bot - Trading Analysis")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        asset_type = st.selectbox("Asset Type", ["Crypto", "Stock", "Forex"])
-    with col2:
-        if asset_type == "Crypto":
-            symbol = st.selectbox("Symbol", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "ADA/USDT"])
-        elif asset_type == "Stock":
-            symbol = st.selectbox("Symbol", ["AAPL", "GOOGL", "MSFT", "TSLA"])
-        else:
-            symbol = st.selectbox("Symbol", ["EUR/USD", "GBP/USD", "USD/JPY"])
-    with col3:
+        st.success("OK - Bot loaded successfully!")
+        
+        # Show simple UI
+        st.markdown("---")
+        st.subheader("Trading Analysis")
+        
+        symbol = st.text_input("Enter symbol", "BTC/USDT")
         timeframe = st.selectbox("Timeframe", ["1h", "4h", "1d", "1w"])
-    
-    if st.button("Analyze", type="primary"):
-        st.write(f"Analyzing {symbol} on {timeframe}...")
-        try:
-            analysis = bot.engine.analyze_single_asset(
-                symbol=symbol,
-                asset_type=asset_type.lower(),
-                timeframe=timeframe,
-                backtest=False
-            )
-            st.success("Analysis complete!")
-            st.json(analysis)
-        except Exception as e:
-            st.error(f"Analysis error: {e}")
-else:
-    st.info("Bot not loaded. Check config.json path.")
+        
+        if st.button("Analyze"):
+            with st.spinner("Analyzing..."):
+                try:
+                    result = bot.engine.analyze_single_asset(
+                        symbol=symbol,
+                        asset_type="crypto",
+                        timeframe=timeframe,
+                        backtest=False
+                    )
+                    st.success("Analysis complete!")
+                    st.json(result)
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+    else:
+        st.warning("config.json not found - bot features unavailable")
+        
+except Exception as e:
+    st.error(f"FAIL - Bot import: {e}")
+    import traceback
+    st.write(traceback.format_exc())
