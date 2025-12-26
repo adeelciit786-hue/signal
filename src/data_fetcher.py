@@ -242,7 +242,7 @@ class DataFetcher:
         
         Args:
             symbol: Trading pair/ticker
-            asset_type: 'crypto', 'forex', or 'stock'
+            asset_type: 'crypto', 'forex', 'stock', or 'commodity'
             timeframe: '1m', '5m', '15m', '30m', '1h', '4h', '1d'
             lookback_days: Number of days of historical data (1-365)
             
@@ -261,6 +261,10 @@ class DataFetcher:
                 forex_symbol = symbol.replace('/', '') + '=X'
                 logger.info(f"Fetching Forex: {symbol} as {forex_symbol} with {lookback_days} days")
                 return self.fetch_stock_ohlcv(forex_symbol, period=f"{lookback_days}d", interval=timeframe)
+            elif asset_type == 'commodity':
+                # Commodities use Yahoo Finance directly with futures symbols
+                logger.info(f"Fetching Commodity: {symbol} with {lookback_days} days")
+                return self.fetch_stock_ohlcv(symbol, period=f"{lookback_days}d", interval=timeframe)
             else:  # stock
                 logger.info(f"Fetching Stock: {symbol} with {lookback_days} days")
                 return self.fetch_stock_ohlcv(symbol, period=f"{lookback_days}d", interval=timeframe)

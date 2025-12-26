@@ -92,10 +92,10 @@ with col2:
 st.sidebar.markdown("## ⚙️ Configuration")
 
 # Asset type selection
-asset_type_map = {"Crypto": "crypto", "Stock": "stock", "Forex": "forex"}
+asset_type_map = {"Crypto": "crypto", "Stock": "stock", "Forex": "forex", "Commodities": "commodity"}
 asset_display = st.sidebar.radio(
     "Asset Type",
-    ["Crypto", "Stock", "Forex"],
+    ["Crypto", "Stock", "Forex", "Commodities"],
     horizontal=True,
     help="Select the asset class to analyze"
 )
@@ -103,9 +103,90 @@ asset_type = asset_type_map[asset_display]
 
 # Symbol selection
 symbols_dict = {
-    "Crypto": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT", "DOGE/USDT", "BNB/USDT"],
-    "Stock": ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "META", "NVDA"],
-    "Forex": ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD", "CAD/USD"]
+    "Crypto": [
+        # Major Cryptocurrencies
+        "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
+        # Layer 2 & Scaling
+        "MATIC/USDT", "ARB/USDT", "OP/USDT", "AVAX/USDT",
+        # DeFi Tokens
+        "AAVE/USDT", "UNI/USDT", "LINK/USDT", "LIDO/USDT",
+        # Altcoins
+        "ADA/USDT", "DOGE/USDT", "SHIB/USDT", "LTC/USDT",
+        # Layer 1 Alternatives
+        "COSMOS/USDT", "ATOM/USDT", "NEAR/USDT", "FLOW/USDT",
+        # Emerging Tokens
+        "PEPE/USDT", "WIF/USDT", "MEME/USDT", "JUP/USDT"
+    ],
+    "Stock": [
+        # Tech Giants
+        "AAPL", "GOOGL", "MSFT", "AMZN", "META", "NVDA", "TSLA",
+        # Semiconductors
+        "AMD", "INTEL", "QCOM", "ASML", "BROADCOM",
+        # Cloud & Enterprise
+        "SALESFORCE", "ORACLE", "IBM", "ADOBE", "CRM",
+        # E-Commerce & Retail
+        "SHOP", "EBAY", "WALMRT", "TGT", "BEST",
+        # Financial Services
+        "JPM", "GS", "BAC", "WFC", "BLK",
+        # Healthcare & Pharma
+        "JNJ", "UNH", "PFE", "ABBV", "MRK",
+        # Consumer & Brands
+        "KO", "PEP", "MCD", "NKE", "LULULEMON",
+        # Energy
+        "XOM", "CVX", "COP", "EOG", "MPC",
+        # Telecommunications
+        "VZ", "T", "CMCSA", "CHTR", "DIS"
+    ],
+    "Forex": [
+        # Major Pairs
+        "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "USD/CAD",
+        # Cross Pairs
+        "EUR/GBP", "EUR/JPY", "GBP/JPY", "AUD/USD", "NZD/USD",
+        # Commodity-linked
+        "USD/MXN", "USD/BRL", "USD/ZAR", "USD/TRY", "USD/INR",
+        # Emerging Markets
+        "USD/CNY", "USD/HKD", "USD/SGD", "USD/IDR", "USD/MYR",
+        # Eastern European
+        "EUR/PLN", "EUR/HUF", "EUR/CZK", "EUR/RON", "EUR/RUB",
+        # Exotic Pairs
+        "AUD/JPY", "NZD/JPY", "GBP/AUD", "EUR/AUD", "CAD/JPY"
+    ],
+    "Commodities": [
+        # Precious Metals
+        "GC=F",      # Gold Futures
+        "SI=F",      # Silver Futures
+        "PL=F",      # Platinum Futures
+        "PA=F",      # Palladium Futures
+        
+        # Energy
+        "CL=F",      # Crude Oil (WTI)
+        "BZ=F",      # Brent Crude
+        "NG=F",      # Natural Gas
+        "HO=F",      # Heating Oil
+        "RB=F",      # RBOB Gasoline
+        
+        # Agricultural
+        "ZW=F",      # Wheat
+        "ZC=F",      # Corn
+        "ZS=F",      # Soybeans
+        "ZL=F",      # Soybean Oil
+        "ZM=F",      # Soybean Meal
+        "CC=F",      # Cocoa
+        "KC=F",      # Coffee
+        "SB=F",      # Sugar
+        "CT=F",      # Cotton
+        
+        # Livestock
+        "LC=F",      # Live Cattle
+        "LH=F",      # Lean Hogs
+        "GF=F",      # Feeder Cattle
+        
+        # Metals
+        "HG=F",      # Copper
+        "AL=F",      # Aluminum
+        "ZN=F",      # Zinc
+        "NI=F"       # Nickel
+    ]
 }
 
 symbol = st.sidebar.selectbox(
