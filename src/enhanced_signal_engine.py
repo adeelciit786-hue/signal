@@ -233,7 +233,8 @@ class EnhancedSignalEngine:
     @staticmethod
     def evaluate_volume_confirmation(df: pd.DataFrame) -> Dict:
         """
-        Volume validation - must confirm price movement
+        Volume validation - LENIENT check
+        Don't block signals just for low volume
         """
         latest = df.iloc[-1]
         
@@ -242,45 +243,44 @@ class EnhancedSignalEngine:
         obv = latest.get('OBV', 0)
         cmf = latest.get('CMF', 0)
         
-        confirmation = False
-        reason = "No Volume Confirmation"
+        # Much more lenient volume checks
+        volume_ok = current_volume >= volume_ma * 0.4  # 40% of average is OK
         
-        # Volume check
-        if current_volume > volume_ma * 1.3:
-            confirmation = True
-            reason = "Strong Volume Confirmation"
-        elif current_volume > volume_ma * 1.0:
-            confirmation = True
-            reason = "Adequate Volume"
-        else:
-            confirmation = False
-            reason = "Low Volume - Risky"
-        
-        # OBV check
+        # OBV check - just needs to be rising
         obv_bullish = False
         if len(df) > 1:
             prev_obv = df.iloc[-2].get('OBV', obv)
             if obv > prev_obv:
                 obv_bullish = True
         
-        # CMF check
-        cmf_bullish = cmf > 0
+        # CMF check - positive money flow
+        cmf_bullish = cmf > -0.1  # Very lenient
         
+        # Confirmation score - need at least 1 positive
         combined_score = 0
-        if confirmation:
+        reason_parts = []
+        
+        if volume_ok:
             combined_score += 1
+            reason_parts.append(f"Volume OK ({current_volume:.0f} vs MA {volume_ma:.0f})")
+        else:
+            reason_parts.append(f"Low volume ({current_volume:.0f} vs MA {volume_ma:.0f})")
+        
         if obv_bullish:
             combined_score += 1
+            reason_parts.append("OBV Rising")
+        
         if cmf_bullish:
             combined_score += 1
+            reason_parts.append("Positive Flows")
         
         return {
-            'confirmed': combined_score >= 2,
-            'confidence': (combined_score / 3) * 100,
-            'volume_check': confirmation,
+            'confirmed': combined_score >= 1,  # Just need 1 positive (was 2)
+            'confidence': min(100, (combined_score / 3) * 100),
+            'volume_check': volume_ok,
             'obv_bullish': obv_bullish,
             'cmf_bullish': cmf_bullish,
-            'reason': reason,
+            'reason': " | ".join(reason_parts),
             'current_volume': current_volume,
             'volume_ma': volume_ma,
             'cmf': cmf
@@ -407,8 +407,9 @@ class EnhancedSignalEngine:
             'volatility': volatility_eval
         }
         
-        # ========== ENHANCED CONSERVATIVE RULES ==========
-        # MORE STRINGENT - Need STRONG alignment for BUY/SELL
+        # ========== ENHANCED SIGNAL RULES ==========
+        # PRIMARY: Trend + Momentum MUST align
+        # SECONDARY: Volume & Volatility are informational
         
         trend = trend_eval['trend']
         trend_conf = trend_eval['confidence']
@@ -416,44 +417,64 @@ class EnhancedSignalEngine:
         momentum_ok = momentum_eval['confirmed']
         volume_ok = volume_eval['confirmed']
         
-        # BUY SIGNAL: Trend BULLISH + Momentum + Volume (Volatility is secondary)
+        # BUY SIGNAL: Trend BULLISH + Momentum Confirmed
+        # (Volume is secondary - doesn't block the signal)
         if (trend == "BULLISH" and 
-            trend_conf > 55 and  # Strong bullish trend
+            trend_conf > 45 and  # Lowered to 45% for more signals
             momentum_ok and 
-            momentum_conf > 50 and  # Confirmed momentum
-            volume_ok):
+            momentum_conf > 45):  # Lowered to 45% for faster confirmation
             
             signal = "BUY"
-            confidence = (trend_conf + momentum_conf) / 2
+            # Confidence is weighted: Trend + Momentum + Volume bonus
+            base_confidence = (trend_conf + momentum_conf) / 2
             
+            # Add volume bonus if confirmed
+            if volume_ok:
+                confidence = min(95, base_confidence + 5)  # Bonus for volume
+            else:
+                confidence = base_confidence  # Use as-is if no volume
+            
+            # Quality based on confidence
             if confidence > 80:
                 quality = SignalQuality.STRONG.value
             elif confidence > 65:
                 quality = SignalQuality.GOOD.value
-            else:
+            elif confidence > 50:
                 quality = SignalQuality.WEAK.value
+            else:
+                quality = SignalQuality.NEUTRAL.value
         
-        # SELL SIGNAL: Trend BEARISH + Momentum + Volume (Volatility is secondary)
+        # SELL SIGNAL: Trend BEARISH + Momentum Confirmed
+        # (Volume is secondary - doesn't block the signal)
         elif (trend == "BEARISH" and 
-              trend_conf > 55 and
+              trend_conf > 45 and
               momentum_ok and 
-              momentum_conf > 50 and
-              volume_ok):
+              momentum_conf > 45):
             
             signal = "SELL"
-            confidence = (trend_conf + momentum_conf) / 2
+            # Confidence is weighted: Trend + Momentum + Volume bonus
+            base_confidence = (trend_conf + momentum_conf) / 2
             
+            # Add volume bonus if confirmed
+            if volume_ok:
+                confidence = min(95, base_confidence + 5)  # Bonus for volume
+            else:
+                confidence = base_confidence  # Use as-is if no volume
+            
+            # Quality based on confidence
             if confidence > 80:
                 quality = SignalQuality.STRONG.value
             elif confidence > 65:
                 quality = SignalQuality.GOOD.value
-            else:
+            elif confidence > 50:
                 quality = SignalQuality.WEAK.value
+            else:
+                quality = SignalQuality.NEUTRAL.value
         
-        # No signal if conditions don't align
+        # No signal if PRIMARY conditions (Trend + Momentum) don't align
         else:
             signal = "NEUTRAL"
-            confidence = 50
+            confidence = 0
             quality = SignalQuality.NEUTRAL.value
         
         # ========== CALCULATE SETUP (Entry, SL, TP) ==========
