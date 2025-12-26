@@ -1,0 +1,10 @@
+[client]
+showErrorDetails = true
+toolbarMode = "viewer"
+
+[server]
+maxUploadSize = 200
+enableXsrfProtection = true
+
+[logger]
+level = "info"
