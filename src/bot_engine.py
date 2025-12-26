@@ -276,9 +276,13 @@ class SignalsBotEngine:
 class BotOrchestrator:
     """High-level bot orchestrator with reporting"""
     
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_or_path = None):
         """Initialize orchestrator"""
-        self.config = BotConfig(config_path)
+        # Handle both BotConfig object and path string
+        if isinstance(config_or_path, BotConfig):
+            self.config = config_or_path
+        else:
+            self.config = BotConfig(config_or_path)
         self.engine = SignalsBotEngine(self.config)
         self.interface = BotInterface()
     
