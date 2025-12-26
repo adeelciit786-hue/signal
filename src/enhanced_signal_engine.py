@@ -380,10 +380,35 @@ class EnhancedSignalEngine:
             confidence = 50
             quality = SignalQuality.NEUTRAL.value
         
+        # ========== CALCULATE SETUP (Entry, SL, TP) ==========
+        latest = df.iloc[-1]
+        current_price = latest['close']
+        atr = latest.get('ATR', current_price * 0.02)
+        
+        setup = {
+            'entry': current_price,
+            'stop_loss': 0,
+            'take_profit': 0,
+            'rr_ratio': 0,
+            'position_size': 0,
+            'atr': atr
+        }
+        
+        if signal == 'BUY':
+            setup['stop_loss'] = current_price - (atr * 2.0)  # 2x ATR below entry
+            setup['take_profit'] = current_price + (atr * 4.0)  # 4x ATR above entry
+            setup['rr_ratio'] = (setup['take_profit'] - setup['entry']) / (setup['entry'] - setup['stop_loss'])
+            
+        elif signal == 'SELL':
+            setup['stop_loss'] = current_price + (atr * 2.0)  # 2x ATR above entry
+            setup['take_profit'] = current_price - (atr * 4.0)  # 4x ATR below entry
+            setup['rr_ratio'] = (setup['entry'] - setup['take_profit']) / (setup['stop_loss'] - setup['entry'])
+        
         return {
             'signal': signal,
             'confidence': confidence,
             'quality': quality,
+            'setup': setup,
             'confirmations': {
                 'trend': trend_eval['trend'],
                 'trend_strength': f"{trend_eval['confidence']:.1f}%",
