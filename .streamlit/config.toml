@@ -9,6 +9,3 @@ runOnSave = true
 
 [logger]
 level = "info"
-
-[deployment]
-primaryCommand = "streamlit run streamlit_app.py"
