@@ -10,6 +10,11 @@ import ccxt
 from datetime import datetime, timedelta
 import logging
 import time
+import warnings
+
+# Suppress yfinance warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', message='.*Yahoo.*')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,20 +23,47 @@ logger = logging.getLogger(__name__)
 class DataFetcher:
     """Unified data fetching from multiple sources with failover"""
     
-    def __init__(self):
+    _instance = None
+    _binance = None
+    _coinbase = None
+    
+    def __new__(cls):
+        # Singleton pattern to avoid multiple CCXT initializations
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+    
+    def _initialize(self):
+        """Initialize exchange connections with proper error handling"""
         try:
-            self.binance = ccxt.binance({'enableRateLimit': True})
+            DataFetcher._binance = ccxt.binance({
+                'enableRateLimit': True,
+                'timeout': 30000,
+                'options': {'defaultType': 'spot'}
+            })
             logger.info("Binance CCXT initialized")
         except Exception as e:
             logger.warning(f"Failed to initialize Binance: {e}")
-            self.binance = None
+            DataFetcher._binance = None
         
         try:
-            self.coinbase = ccxt.coinbase({'enableRateLimit': True})
+            DataFetcher._coinbase = ccxt.coinbase({
+                'enableRateLimit': True,
+                'timeout': 30000
+            })
             logger.info("Coinbase CCXT initialized")
         except Exception as e:
             logger.warning(f"Failed to initialize Coinbase: {e}")
-            self.coinbase = None
+            DataFetcher._coinbase = None
+    
+    @property
+    def binance(self):
+        return DataFetcher._binance
+    
+    @property
+    def coinbase(self):
+        return DataFetcher._coinbase
         
     def fetch_crypto_ohlcv(self, symbol: str, timeframe: str = '1h', limit: int = 500) -> pd.DataFrame:
         """
@@ -45,11 +77,28 @@ class DataFetcher:
         Returns:
             DataFrame with OHLCV data
         """
+        # Validate symbol format
+        if symbol and '/' not in symbol:
+            symbol = symbol + '/USDT'
+            logger.info(f"Converted symbol to {symbol}")
+        
         # Try multiple times with exponential backoff
         for attempt in range(3):
             try:
                 if self.binance is None:
-                    raise Exception("Binance not initialized")
+                    logger.warning("Binance not initialized, trying to reinitialize...")
+                    self._initialize()
+                    if self.binance is None:
+                        raise Exception("Binance CCXT not available")
+                
+                # Validate symbol exists on Binance
+                try:
+                    self.binance.load_markets()
+                    if symbol not in self.binance.symbols:
+                        # Try without checking markets (some symbols may not be in list)
+                        logger.warning(f"Symbol {symbol} may not exist, attempting fetch anyway")
+                except Exception as market_error:
+                    logger.warning(f"Could not load markets: {market_error}")
                 
                 logger.info(f"Fetching {symbol} from Binance (attempt {attempt + 1}/3)...")
                 ohlcv = self.binance.fetch_ohlcv(symbol, timeframe, limit=limit)
@@ -64,6 +113,10 @@ class DataFetcher:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 df.set_index('timestamp', inplace=True)
                 
+                # Ensure numeric types
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                
                 # Ensure data quality
                 df = df.dropna()
                 
@@ -74,6 +127,12 @@ class DataFetcher:
                     logger.warning(f"Only {len(df)} candles returned for {symbol}, need 50+")
                     raise Exception(f"Insufficient data: only {len(df)} candles")
                     
+            except (ccxt.NetworkError, ccxt.ExchangeError, TimeoutError) as e:
+                logger.warning(f"Attempt {attempt + 1} network error for {symbol}: {str(e)}")
+                if attempt < 2:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {str(e)}")
                 if attempt < 2:
@@ -83,28 +142,64 @@ class DataFetcher:
         
         # Fallback: Try to fetch from Yahoo Finance
         logger.warning(f"Binance fetch failed after 3 attempts, trying Yahoo Finance fallback for {symbol}")
-        return self._fetch_crypto_yfinance_fallback(symbol, timeframe)
+        df = self._fetch_crypto_yfinance_fallback(symbol, timeframe)
+        
+        # If Yahoo Finance also fails, try alternative sources
+        if df.empty or len(df) == 0:
+            logger.warning(f"Yahoo Finance fallback also failed, trying alternative crypto sources...")
+            try:
+                from .alternative_crypto_fetcher import AlternativeCryptoFetcher
+                df = AlternativeCryptoFetcher.fetch_crypto_data(symbol, timeframe, days=90)
+            except Exception as e:
+                logger.error(f"Alternative crypto fetch also failed: {str(e)}")
+        
+        return df
     
     def _fetch_crypto_yfinance_fallback(self, symbol: str, timeframe: str = '1h') -> pd.DataFrame:
         """Fallback crypto fetch using Yahoo Finance"""
         try:
             # Convert CCXT symbol to Yahoo Finance format
-            # BTC/USDT -> BTCUSDT (no dash for crypto on Yahoo)
-            yf_symbol = symbol.replace('/', '')
+            # BTC/USDT -> BTC-USD
+            base_asset = symbol.split('/')[0] if '/' in symbol else symbol
+            
+            yf_symbol = f"{base_asset}-USD"
             
             period_map = {'1m': '7d', '5m': '60d', '15m': '60d', '1h': '90d', '4h': '360d', '1d': '5y'}
             period = period_map.get(timeframe, '90d')
             
             logger.info(f"Fetching {symbol} from Yahoo Finance as {yf_symbol}")
-            df = yf.download(yf_symbol, period=period, interval=timeframe, progress=False)
+            
+            # Suppress yfinance output
+            import io
+            import contextlib
+            
+            f = io.StringIO()
+            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+                df = yf.download(yf_symbol, period=period, interval=timeframe, progress=False)
             
             if df is None or len(df) == 0:
                 raise Exception("Yahoo Finance returned no data")
             
             # Standardize columns
-            if 'Adj Close' in df.columns:
-                df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-            df.columns = ['open', 'high', 'low', 'close', 'volume']
+            if isinstance(df, pd.DataFrame):
+                if 'Adj Close' in df.columns:
+                    df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                else:
+                    # Keep the first 5 columns
+                    df = df.iloc[:, :5]
+                
+                # Standard column names
+                col_names = {
+                    'Open': 'open', 'High': 'high', 'Low': 'low', 
+                    'Close': 'close', 'Volume': 'volume'
+                }
+                df.rename(columns=col_names, inplace=True)
+            
+            # Ensure numeric columns
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
             df = df.dropna()
             
             if len(df) > 50:
@@ -135,7 +230,14 @@ class DataFetcher:
                 period = '90d'
             
             logger.info(f"Fetching {symbol} with period={period}, interval={interval}")
-            df = yf.download(symbol, period=period, interval=interval, progress=False)
+            
+            # Suppress yfinance output
+            import io
+            import contextlib
+            
+            f = io.StringIO()
+            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+                df = yf.download(symbol, period=period, interval=interval, progress=False)
             
             if df is None or len(df) == 0:
                 raise Exception(f"No data returned for {symbol}")
@@ -253,23 +355,36 @@ class DataFetcher:
         lookback_days = max(1, min(365, lookback_days))
         
         try:
+            logger.info(f"fetch_data called: symbol={symbol}, asset_type={asset_type}, timeframe={timeframe}, lookback_days={lookback_days}")
+            
             if asset_type == 'crypto':
                 # For crypto, use CCXT with fallback to Yahoo
-                return self.fetch_crypto_ohlcv(symbol, timeframe, limit=500)
+                logger.info(f"Fetching crypto: {symbol}")
+                result = self.fetch_crypto_ohlcv(symbol, timeframe, limit=500)
+                logger.info(f"Crypto fetch returned: {type(result)}, empty={result.empty if hasattr(result, 'empty') else 'N/A'}, len={len(result) if hasattr(result, '__len__') else 'N/A'}")
+                return result
             elif asset_type == 'forex':
                 # Convert forex symbol format: AUD/USD -> AUDUSD=X
                 forex_symbol = symbol.replace('/', '') + '=X'
-                logger.info(f"Fetching Forex: {symbol} as {forex_symbol} with {lookback_days} days")
-                return self.fetch_stock_ohlcv(forex_symbol, period=f"{lookback_days}d", interval=timeframe)
+                logger.info(f"Fetching Forex: {symbol} as {forex_symbol}")
+                result = self.fetch_stock_ohlcv(forex_symbol, period=f"{lookback_days}d", interval=timeframe)
+                logger.info(f"Forex fetch returned: {type(result)}, len={len(result)}")
+                return result
             elif asset_type == 'commodity':
                 # Commodities use Yahoo Finance directly with futures symbols
-                logger.info(f"Fetching Commodity: {symbol} with {lookback_days} days")
-                return self.fetch_stock_ohlcv(symbol, period=f"{lookback_days}d", interval=timeframe)
+                logger.info(f"Fetching Commodity: {symbol}")
+                result = self.fetch_stock_ohlcv(symbol, period=f"{lookback_days}d", interval=timeframe)
+                logger.info(f"Commodity fetch returned: {type(result)}, len={len(result)}")
+                return result
             else:  # stock
-                logger.info(f"Fetching Stock: {symbol} with {lookback_days} days")
-                return self.fetch_stock_ohlcv(symbol, period=f"{lookback_days}d", interval=timeframe)
+                logger.info(f"Fetching Stock: {symbol}")
+                result = self.fetch_stock_ohlcv(symbol, period=f"{lookback_days}d", interval=timeframe)
+                logger.info(f"Stock fetch returned: {type(result)}, len={len(result)}")
+                return result
         except Exception as e:
-            logger.error(f"Error fetching {symbol} ({asset_type}, {timeframe}): {str(e)}")
+            logger.error(f"ERROR in fetch_data for {symbol} ({asset_type}, {timeframe}): {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return pd.DataFrame()
     
     def get_current_price(self, symbol: str, asset_type: str = 'crypto') -> float:

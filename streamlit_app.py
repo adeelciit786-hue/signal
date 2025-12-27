@@ -12,6 +12,8 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
+from functools import lru_cache
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -35,13 +37,25 @@ except Exception as e:
     st.error(f"❌ Failed to load bot modules: {e}")
     st.stop()
 
-# ==================== PAGE CONFIGURATION ====================
+# ==================== INITIALIZATION ====================
 st.set_page_config(
     page_title="Professional Trading Signals Bot",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize session state
+if 'last_symbol' not in st.session_state:
+    st.session_state.last_symbol = None
+if 'last_asset_type' not in st.session_state:
+    st.session_state.last_asset_type = None
+if 'last_timeframe' not in st.session_state:
+    st.session_state.last_timeframe = None
+if 'cached_data' not in st.session_state:
+    st.session_state.cached_data = None
+if 'cached_df' not in st.session_state:
+    st.session_state.cached_df = None
 
 # Custom CSS
 st.markdown("""
@@ -239,25 +253,80 @@ status_col1, status_col2, status_col3 = st.columns(3)
 
 with st.spinner("🔄 Fetching market data..."):
     try:
-        # Fetch data
-        fetcher = DataFetcher()
-        logger.info(f"Attempting to fetch {symbol} ({asset_type}, {timeframe})")
+        # Check if we need to fetch new data
+        need_new_fetch = (
+            st.session_state.last_symbol != symbol or 
+            st.session_state.last_asset_type != asset_type or
+            st.session_state.last_timeframe != timeframe
+        )
         
-        df = fetcher.fetch_data(symbol, asset_type, timeframe, lookback_days=90)
-        
-        if df.empty or len(df) == 0:
-            st.error(f"❌ Failed to fetch data for {symbol}. No data returned from any source.")
-            st.info("**Troubleshooting steps:**\n1. Check your internet connection\n2. Verify symbol spelling\n3. Try a different timeframe (e.g., 1h or 4h)\n4. Ensure the market is open for this asset")
-            st.stop()
-        
-        if len(df) < 50:
-            st.warning(f"⚠️ Low data: Only {len(df)} candles fetched (need 50+)")
-            if len(df) < 10:
-                st.error(f"❌ Insufficient data for {symbol}. Got {len(df)} candles, need at least 50.")
-                st.info("**Troubleshooting:**\n- Try a different timeframe\n- Check symbol spelling\n- Ensure market is open")
+        if need_new_fetch or st.session_state.cached_df is None:
+            logger.info(f"Fetching new data: symbol={symbol}, asset_type={asset_type}, timeframe={timeframe}")
+            
+            # Get the fetcher instance (singleton)
+            fetcher = DataFetcher()
+            
+            # Log the fetch attempt
+            logger.info(f"Attempting to fetch {symbol} ({asset_type}, {timeframe})")
+            
+            # Fetch data - try with different lookback periods if needed
+            df = None
+            for lookback in [90, 60, 30, 7]:
+                logger.info(f"Trying fetch with lookback_days={lookback}...")
+                df = fetcher.fetch_data(symbol, asset_type, timeframe, lookback_days=lookback)
+                logger.info(f"Fetch returned: type={type(df)}, is_none={df is None}, is_empty={df.empty if hasattr(df, 'empty') else 'N/A'}, len={len(df) if hasattr(df, '__len__') else 'N/A'}")
+                
+                if df is not None and not df.empty and len(df) > 0:
+                    logger.info(f"Success with lookback_days={lookback}")
+                    break
+                else:
+                    logger.warning(f"Failed with lookback_days={lookback}, trying next...")
+            
+            if df is None or df.empty or len(df) == 0:
+                st.error(f"❌ Failed to fetch data for {symbol}. No data returned from any source.")
+                st.markdown(f"""
+                **Debug Info:**
+                - Symbol: {symbol}
+                - Asset Type: {asset_type}
+                - Timeframe: {timeframe}
+                
+                **Troubleshooting steps:**
+                1. Check your internet connection
+                2. Verify symbol spelling (e.g., BTC/USDT, not BTC)
+                3. Try a different timeframe (e.g., 1h or 4h instead of 15m)
+                4. Ensure the market is open for this asset
+                5. Try a different symbol from the dropdown
+                
+                **Common Issues:**
+                - Some symbols may not be available with certain timeframes
+                - Intra-day data (15m, 30m) requires active market hours
+                - Market may be closed for the selected asset
+                """)
+                logger.error(f"Failed to fetch {symbol}: Tried multiple lookback periods, all returned empty")
                 st.stop()
-        
-        logger.info(f"Successfully fetched {len(df)} candles for {symbol}")
+            
+            if len(df) < 50:
+                st.warning(f"⚠️ Low data: Only {len(df)} candles fetched (need 50+)")
+                if len(df) < 10:
+                    st.error(f"❌ Insufficient data for {symbol}. Got {len(df)} candles, need at least 50.")
+                    st.markdown("""
+                    **Recommended fixes:**
+                    - Switch to 1h or 4h timeframe (more data available)
+                    - Wait for market to open
+                    - Check symbol spelling
+                    """)
+                    st.stop()
+            
+            # Update session state
+            st.session_state.cached_df = df
+            st.session_state.last_symbol = symbol
+            st.session_state.last_asset_type = asset_type
+            st.session_state.last_timeframe = timeframe
+            
+            logger.info(f"Successfully fetched {len(df)} candles for {symbol}")
+        else:
+            df = st.session_state.cached_df
+            logger.info(f"Using cached data: {len(df)} candles")
         
         # Calculate all technical indicators
         TechnicalIndicators.calculate_all_indicators(df)
@@ -272,7 +341,13 @@ with st.spinner("🔄 Fetching market data..."):
         st.error(f"❌ Error fetching data: {str(e)}")
         logger.error(f"Data fetch error for {symbol}: {str(e)}")
         logger.exception("Full traceback:")
-        st.info("**Troubleshooting:**\n- Check your internet connection\n- Verify the symbol exists\n- Try a different timeframe")
+        st.markdown("""
+        **Troubleshooting:**
+        - Verify your internet connection
+        - Check if the symbol exists in the selected market
+        - Try a different timeframe
+        - Try refreshing the page
+        """)
         st.stop()
 
 # ==================== SIGNAL GENERATION ====================
