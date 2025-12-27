@@ -67,7 +67,7 @@ class DataFetcher:
         
     def fetch_crypto_ohlcv(self, symbol: str, timeframe: str = '1h', limit: int = 500) -> pd.DataFrame:
         """
-        Fetch OHLCV data from Binance for crypto pairs with retry logic
+        Fetch OHLCV data from Binance for crypto pairs with fallback to Yahoo Finance
         
         Args:
             symbol: Trading pair (e.g., 'BTC/USDT')
@@ -82,78 +82,58 @@ class DataFetcher:
             symbol = symbol + '/USDT'
             logger.info(f"Converted symbol to {symbol}")
         
-        # Try multiple times with exponential backoff
-        for attempt in range(3):
-            try:
-                if self.binance is None:
-                    logger.warning("Binance not initialized, trying to reinitialize...")
-                    self._initialize()
-                    if self.binance is None:
-                        raise Exception("Binance CCXT not available")
-                
-                # Validate symbol exists on Binance
-                try:
-                    self.binance.load_markets()
-                    if symbol not in self.binance.symbols:
-                        # Try without checking markets (some symbols may not be in list)
-                        logger.warning(f"Symbol {symbol} may not exist, attempting fetch anyway")
-                except Exception as market_error:
-                    logger.warning(f"Could not load markets: {market_error}")
-                
-                logger.info(f"Fetching {symbol} from Binance (attempt {attempt + 1}/3)...")
+        # TRY 1: Binance CCXT
+        try:
+            if self.binance is None:
+                logger.warning("Binance not initialized, reinitializing...")
+                self._initialize()
+            
+            if self.binance is not None:
+                logger.info(f"Fetching {symbol} from Binance...")
                 ohlcv = self.binance.fetch_ohlcv(symbol, timeframe, limit=limit)
                 
                 if not ohlcv or len(ohlcv) == 0:
-                    raise Exception(f"No data returned for {symbol}")
+                    raise Exception(f"No data from Binance")
                 
-                df = pd.DataFrame(
-                    ohlcv,
-                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-                )
+                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 df.set_index('timestamp', inplace=True)
                 
-                # Ensure numeric types
                 for col in ['open', 'high', 'low', 'close', 'volume']:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 
-                # Ensure data quality
                 df = df.dropna()
                 
                 if len(df) > 50:
-                    logger.info(f"Successfully fetched {len(df)} candles for {symbol} from Binance")
+                    logger.info(f"✓ Successfully got {len(df)} candles from Binance")
                     return df
-                else:
-                    logger.warning(f"Only {len(df)} candles returned for {symbol}, need 50+")
-                    raise Exception(f"Insufficient data: only {len(df)} candles")
                     
-            except (ccxt.NetworkError, ccxt.ExchangeError, TimeoutError) as e:
-                logger.warning(f"Attempt {attempt + 1} network error for {symbol}: {str(e)}")
-                if attempt < 2:
-                    wait_time = 2 ** attempt
-                    logger.info(f"Waiting {wait_time} seconds before retry...")
-                    time.sleep(wait_time)
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {str(e)}")
-                if attempt < 2:
-                    wait_time = 2 ** attempt
-                    logger.info(f"Waiting {wait_time} seconds before retry...")
-                    time.sleep(wait_time)
+        except Exception as e:
+            logger.warning(f"Binance failed: {str(e)}")
         
-        # Fallback: Try to fetch from Yahoo Finance
-        logger.warning(f"Binance fetch failed after 3 attempts, trying Yahoo Finance fallback for {symbol}")
-        df = self._fetch_crypto_yfinance_fallback(symbol, timeframe)
+        # TRY 2: Yahoo Finance fallback
+        try:
+            logger.info(f"Trying Yahoo Finance for {symbol}...")
+            df = self._fetch_crypto_yfinance_fallback(symbol, timeframe)
+            if len(df) > 0:
+                logger.info(f"✓ Successfully got {len(df)} candles from Yahoo Finance")
+                return df
+        except Exception as e:
+            logger.warning(f"Yahoo Finance failed: {str(e)}")
         
-        # If Yahoo Finance also fails, try alternative sources
-        if df.empty or len(df) == 0:
-            logger.warning(f"Yahoo Finance fallback also failed, trying alternative crypto sources...")
-            try:
-                from .alternative_crypto_fetcher import AlternativeCryptoFetcher
-                df = AlternativeCryptoFetcher.fetch_crypto_data(symbol, timeframe, days=90)
-            except Exception as e:
-                logger.error(f"Alternative crypto fetch also failed: {str(e)}")
+        # TRY 3: Alternative sources
+        try:
+            logger.info(f"Trying alternative sources for {symbol}...")
+            from .alternative_crypto_fetcher import AlternativeCryptoFetcher
+            df = AlternativeCryptoFetcher.fetch_crypto_data(symbol, timeframe, days=90)
+            if len(df) > 0:
+                logger.info(f"✓ Successfully got {len(df)} candles from alternative source")
+                return df
+        except Exception as e:
+            logger.warning(f"Alternative source failed: {str(e)}")
         
-        return df
+        logger.error(f"✗ All sources failed for {symbol}")
+        return pd.DataFrame()
     
     def _fetch_crypto_yfinance_fallback(self, symbol: str, timeframe: str = '1h') -> pd.DataFrame:
         """Fallback crypto fetch using Yahoo Finance"""
